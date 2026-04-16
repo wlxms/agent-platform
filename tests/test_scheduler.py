@@ -1,4 +1,4 @@
-"""Tests for the Scheduler service - proxy routing, task status, error handling."""
+﻿"""Tests for the Scheduler service - proxy routing, task status, error handling."""
 import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -11,7 +11,7 @@ def anyio_backend():
 
 @pytest.mark.asyncio
 async def test_health():
-    from ohent_scheduler.main import app
+    from agentp_scheduler.main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/health")
@@ -22,7 +22,7 @@ async def test_health():
 @pytest.mark.asyncio
 async def test_task_status_unknown():
     """Unknown task returns completed with null result."""
-    from ohent_scheduler.main import app
+    from agentp_scheduler.main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/api/v1/tasks/task-123")
@@ -36,8 +36,8 @@ async def test_task_status_unknown():
 @pytest.mark.asyncio
 async def test_task_status_known():
     """Known task returns stored data."""
-    from ohent_scheduler.proxy import _tasks
-    from ohent_scheduler.main import app
+    from agentp_scheduler.proxy import _tasks
+    from agentp_scheduler.main import app
 
     _tasks["task-abc"] = {"id": "task-abc", "status": "running", "result": None}
 
@@ -53,13 +53,13 @@ async def test_task_status_known():
 @pytest.mark.asyncio
 async def test_proxy_agents_to_host():
     """GET /api/v1/agents forwards to host service."""
-    from ohent_scheduler.main import app
+    from agentp_scheduler.main import app
 
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"items": [], "total": 0, "page": 1, "page_size": 20}
 
-    with patch("ohent_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
+    with patch("agentp_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
         mock_instance = AsyncMock()
         mock_instance.request = AsyncMock(return_value=mock_response)
         mock_cm = AsyncMock()
@@ -85,13 +85,13 @@ async def test_proxy_agents_to_host():
 @pytest.mark.asyncio
 async def test_proxy_auth_forward():
     """POST /api/v1/auth/login forwards to auth service."""
-    from ohent_scheduler.main import app
+    from agentp_scheduler.main import app
 
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"access_token": "tok", "token_type": "bearer"}
 
-    with patch("ohent_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
+    with patch("agentp_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
         mock_instance = AsyncMock()
         mock_instance.request = AsyncMock(return_value=mock_response)
         mock_cm = AsyncMock()
@@ -113,13 +113,13 @@ async def test_proxy_auth_forward():
 @pytest.mark.asyncio
 async def test_proxy_memory_forward():
     """GET /api/v1/memory/stores forwards to memory service."""
-    from ohent_scheduler.main import app
+    from agentp_scheduler.main import app
 
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"items": [], "total": 0}
 
-    with patch("ohent_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
+    with patch("agentp_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
         mock_instance = AsyncMock()
         mock_instance.request = AsyncMock(return_value=mock_response)
         mock_cm = AsyncMock()
@@ -140,13 +140,13 @@ async def test_proxy_memory_forward():
 @pytest.mark.asyncio
 async def test_proxy_headers_forwarded():
     """Verify internal headers are set on forwarded requests."""
-    from ohent_scheduler.main import app
+    from agentp_scheduler.main import app
 
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {}
 
-    with patch("ohent_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
+    with patch("agentp_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
         mock_instance = AsyncMock()
         mock_instance.request = AsyncMock(return_value=mock_response)
         mock_cm = AsyncMock()
@@ -173,9 +173,9 @@ async def test_proxy_headers_forwarded():
 @pytest.mark.asyncio
 async def test_proxy_upstream_unavailable():
     """502 when backend connection fails."""
-    from ohent_scheduler.main import app
+    from agentp_scheduler.main import app
 
-    with patch("ohent_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
+    with patch("agentp_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
         mock_instance = AsyncMock()
         mock_instance.request.side_effect = Exception("Connection refused")
         mock_cm = AsyncMock()
@@ -196,7 +196,7 @@ async def test_proxy_upstream_unavailable():
 @pytest.mark.asyncio
 async def test_proxy_no_route_404():
     """Unrecognized path prefix returns 404."""
-    from ohent_scheduler.main import app
+    from agentp_scheduler.main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/api/v1/unknown/resource", headers={"x-request-id": "req-404"})
@@ -208,13 +208,13 @@ async def test_proxy_no_route_404():
 @pytest.mark.asyncio
 async def test_proxy_backend_error_passthrough():
     """Backend 4xx/5xx errors pass through as-is."""
-    from ohent_scheduler.main import app
+    from agentp_scheduler.main import app
 
     mock_response = MagicMock()
     mock_response.status_code = 422
     mock_response.json.return_value = {"code": "VALIDATION_ERROR", "message": "bad input"}
 
-    with patch("ohent_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
+    with patch("agentp_scheduler.proxy.httpx.AsyncClient") as mock_client_cls:
         mock_instance = AsyncMock()
         mock_instance.request = AsyncMock(return_value=mock_response)
         mock_cm = AsyncMock()

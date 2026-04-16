@@ -2,7 +2,7 @@ r"""
 Full chain E2E test: Gateway -> Scheduler -> Auth/Host -> SDK
 
 Prerequisites:
-  1. Run: podman start ohent-pg ohent-redis
+  1. Run: podman start agentp-pg agentp-redis
   2. Run: .\scripts\dev_start.ps1
   3. Run: python -m pytest tests/test_e2e_full_chain.py -v -m e2e
 """

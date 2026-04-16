@@ -1,40 +1,60 @@
-结合SDK，帮我设计一个简单的后台系统框架，虽然这个框架简单，但是要足够银弹，应该是个多进程框架（可以是类似子进程模拟，也可以是真实的分布式，根据适配性决定），要考虑到企业级别的并发，主要的目的是为了实现企业内部可以申领Agent，然后统计agent的消耗以及费用这样，基础框架应该如下：
-## 一、Agent宿主服务 - 用于使用sdk创建和管理对应的harnessAgent
-    - 支持唯一的guid分配，创建一个实例时，会返回对应的guid
-    - 支持性能监控，防止超过限度的agent实例创建
-    - 支持操控指定的Agent，如执行命令，安装skill，配置MCP等所有SDK支持的功能
-    - 支持记忆同步，即用户可以下载远端记忆和配置，也可以上传远端记忆和配置
+﻿结合 agent-orchestrator SDK，设计一个可扩展的多进程 Agent 编排平台。框架追求简单但足够灵活：开发阶段单机多进程即可运行，生产阶段可平滑过渡到真实分布式部署。主要目标是企业内部 Agent 申领管理、消耗统计与费用控制。
 
-## 二、记忆服务 - 直接操作数据库按需存储数据
+平台采用 **adapter 模式**：agent-orchestrator SDK 是通用的 Agent 编排引擎，不绑定任何特定的 Agent 运行时。通过可插拔的 Agent Adapter 适配不同的 Agent 框架（OpenHarness、Claude Code、Codex 等）。
+
+## 一、Agent宿主服务 - 使用 SDK 创建和管理 Agent 实例
+
+    - 通过 agent-orchestrator 的 `OrchestratorClient` 创建和管理 Agent 实例
+    - 支持唯一的 GUID 分配，创建实例时返回对应 GUID
+    - 支持性能监控，防止超过限度的实例创建
+    - 通过 Agent Adapter 支持操控不同框架的 Agent（执行命令、安装 Skill、配置 MCP 等）
+    - 支持记忆同步：下载/上传远端记忆和配置
+    - 每个 worker 进程独立持有 `OrchestratorClient`，通过 adapter 注入对应的 Agent 框架适配器
+
+## 二、Agent 适配层 (`agents/`)
+
+作为平台与 Agent 运行时之间的桥接层，实现 Agent Framework 的解耦。
+
+    - 每个 Agent 框架对应一个独立适配器目录（如 `agents/openharness/`、`agents/claude-code/`）
+    - 适配器实现 agent-orchestrator 的 `AgentAdapter` 协议（`build_exec_argv`、`build_exec_env`）
+    - 适配器负责将通用的编排请求翻译为特定框架的 CLI 参数和环境变量
+    - 宿主服务通过 adapter 参数注入适配器，无需修改 SDK 核心代码
+    - 新增 Agent 框架只需添加一个适配器目录，无需改动平台代码
+
+## 三、记忆服务 - 直接操作数据库按需存储数据
+
     - 存储用户各类型的定制化资产，使用路径的形式存储
-    - 高拓展性，高性能的的存储框架
+    - 高扩展性、高性能的存储框架
 
-## 三、Agent市场服务 - 用于提供Agent定制服务、与定制Agent配置
-    - 通过记忆服务或者外部服务，获取存储的已经定制好的Agent模型和配置
-    - 通过记忆服务或外部服务，获取SKILL或者MCP
+## 四、Agent 市场服务 - 提供 Agent 定制服务与配置
 
-## 四、用户与权限管理服务 - 支持企业级的架构以及权限管理
+    - 通过记忆服务或外部服务，获取已定制好的 Agent 模型和配置
+    - 通过记忆服务或外部服务，获取 Skill 和 MCP
+    - 支持 Agent 配置的发布与版本管理
+
+## 五、用户与权限管理服务 - 支持企业级架构与权限管理
+
     - 支持企业级的组织定义
-    - 以及为各级分配对应的有组织标识的apikey，即每个apikey都可以知道其上级是谁，有什么下级
-    - 支持自定义的可拓展的权限定义与管理
+    - 为各级分配有组织标识的 API Key，每个 Key 可追溯上下级关系
+    - 支持自定义的可扩展权限定义与管理
     - 使用记忆服务存储用户数据
 
-## 五、中央调度与管理服务 - 集成相关服务的中央调度器
+## 六、中央调度与管理服务 - 集成相关服务的中央调度器
 
 作为整个系统的中枢，负责服务编排、任务调度、计费聚合与全局状态管理。所有内部服务通过该服务协同工作。
 
-### 5.1 服务注册与发现
-- 维护各微服务（Agent宿主、记忆、市场、权限）的注册表，支持服务健康检查与自动摘除
+### 6.1 服务注册与发现
+- 维护各微服务（Agent 宿主、记忆、市场、权限）的注册表，支持服务健康检查与自动摘除
 - 支持服务版本管理，兼容多版本并行运行与灰度切换
 - 提供统一的服务状态查询接口，便于运维监控
 
-### 5.2 Agent 申领流程编排
+### 6.2 Agent 申领流程编排
 - 提供完整的 Agent 申领工作流：权限校验 → 配额检查 → 实例创建 → 资源分配 → 回调通知
 - 支持申领审批机制：根据组织策略，某些 Agent 类型或高资源规格可配置为需审批
 - 支持 Agent 实例的批量申领与预分配（企业级批量开通场景）
 - 申领失败时自动回滚已分配资源，并返回明确错误码
 
-### 5.3 计费与消耗统计引擎
+### 6.3 计费与消耗统计引擎
 - 通过 Agent宿主服务的性能监控数据，聚合各维度的 Token 消耗（input_tokens / output_tokens）
 - 按组织层级（公司 → 部门 → 团队 → 个人）聚合费用统计，支持逐级汇总与穿透查询
 - 支持多种计费模型：按量计费（per-token）、包月配额、预充值扣费
@@ -42,25 +62,25 @@
 - 支持自定义计费规则：不同模型/不同 Agent 类型可配置差异化单价
 - 提供费用告警机制：当组织或个人消耗接近阈值时自动触发通知
 
-### 5.4 全局任务调度
+### 6.4 全局任务调度
 - 封装 SDK 的 `InProcScheduler` 能力，提供异步任务队列
 - 支持优先级调度：高优先级任务（如实例恢复）优先于常规任务（如批量查询）
 - 支持定时任务：定时回收闲置 Agent 实例、定时生成费用报表、定时健康检查
 - 任务状态追踪：pending → running → completed/failed，支持任务取消与重试
 - 任务超时控制与死信队列，防止任务堆积
 
-### 5.5 实例生命周期管理
+### 6.5 实例生命周期管理
 - 统一管理 Agent 实例的完整生命周期，协调宿主服务与记忆服务
 - 闲置检测：对长时间无交互的实例自动标记为 idle，触发资源回收策略
 - 异常恢复：当宿主服务上报实例异常时，自动触发 SDK 的 `RecoverService` 进行恢复
 - 实例状态全局视图：跨宿主节点的实例状态聚合查询
 
-### 5.6 配置中心
+### 6.6 配置中心
 - 全局配置统一管理：系统默认配置、组织级配置覆盖、实例级配置继承
 - 配置热更新：修改配置后无需重启服务即可生效
 - 配置版本管理：支持配置回滚与审计日志
 
-### 5.7 事件总线
+### 6.7 事件总线
 - 服务间异步通信基于事件驱动，降低耦合度
 - 核心事件类型：`agent.created`、`agent.destroyed`、`agent.usage`、`quota.exceeded`、`approval.requested`、`approval.approved/rejected`
 - 支持事件的持久化与回放，用于故障恢复与审计追溯
@@ -68,25 +88,25 @@
 
 ---
 
-## 六、网关 - 接收请求并转发到对应的中央调度服务
+## 七、网关 - 接收请求并转发到对应的中央调度服务
 
 作为系统的唯一入口，负责请求路由、认证鉴权、限流熔断与协议适配。对外暴露的完整 API 接口定义参见 [api-protocol.md](api-protocol.md)。
 
-### 6.1 协议适配层
+### 7.1 协议适配层
 - 对外暴露 RESTful API（HTTP/HTTPS），企业内部前端/CLI 统一通过 HTTP 访问
 - 预留 WebSocket 支持，用于 Agent 交互的实时流式响应（对应 SDK 的 `StreamEvent`）
 - 预留 gRPC 通道，用于服务间高性能通信（网关到中央调度、中央调度到各微服务）
 - API 版本管理：URL 前缀 `/api/v1/`，支持多版本共存
 - 统一响应格式与错误码定义参见 [api-protocol.md 第 2 节](api-protocol.md#2-统一响应格式)
 
-### 6.2 认证与鉴权中间件
+### 7.2 认证与鉴权中间件
 - 所有请求必须携带有效的组织 API Key（由权限管理服务签发），网关层做基础校验
 - 请求头格式：`Authorization: Bearer <org-apikey>` 或自定义 `X-OH-API-Key` 头
 - 网关层校验 API Key 的有效性与组织归属，将解析后的身份信息（org_id、user_id、permissions）注入请求上下文
 - 支持基于路径的鉴权预检：某些管理接口仅允许管理员角色访问
 - API Key 过期与轮换机制：支持设置有效期，到期前自动提醒
 
-### 6.3 请求路由
+### 7.3 请求路由
 - 基于 URL path + method 的路由规则，将请求转发到中央调度服务的对应处理单元
 - 完整路由表与接口定义参见 [api-protocol.md 第 3 节](api-protocol.md#3-路由表)
 
@@ -105,7 +125,7 @@
 
 - 支持路由动态更新，新增服务无需重启网关
 
-### 6.4 限流与熔断
+### 7.4 限流与熔断
 - 多维度限流策略：
   - **全局限流**：网关层总 QPS 上限，防止系统过载
   - **组织级限流**：根据组织的套餐等级限制并发请求数
@@ -114,41 +134,43 @@
 - 熔断机制：当下游服务连续失败达到阈值时，自动熔断并返回降级响应
 - 限流算法：滑动窗口或令牌桶，可按需配置
 
-### 6.5 请求日志与审计
+### 7.5 请求日志与审计
 - 全量记录请求日志：时间、来源 IP、API Key 标识、请求路径、响应状态码、耗时
 - 审计日志独立存储，不可篡改，用于安全审计与问题排查
 - 支持日志脱敏：请求体中的敏感字段（API Key、密码）自动掩码
 
-### 6.6 负载均衡
+### 7.6 负载均衡
 - 当中央调度服务部署多实例时，网关负责请求的负载分发
 - 支持轮询、加权轮询、最少连接数等策略
 - 支持会话亲和性（sticky session）：同一用户的请求尽量路由到同一调度实例
 
-### 6.7 错误处理与响应规范
+### 7.7 错误处理与响应规范
 
 - 统一错误响应格式与完整错误码表参见 [api-protocol.md 第 2 节](api-protocol.md#2-统一响应格式)
 - 每个请求分配唯一 `request_id`，贯穿网关→调度→各服务，便于全链路追踪
 
-### 6.8 部署与扩展
+### 7.8 部署与扩展
 - 网关本身应为无状态服务，支持水平扩展
 - 配置（路由表、限流规则、证书）通过中央配置中心下发，支持热重载
 - 支持 TLS 终止，企业内网可选用 HTTP，跨网段强制 HTTPS
 
 ---
 
-## 七、技术选型
+## 八、技术选型
 
-### 7.1 整体原则
-- 主语言统一为 Python 3.11+，与 OpenHarness SDK 和核心运行时保持技术栈一致，降低维护成本
+### 8.1 整体原则
+- 主语言统一为 Python 3.11+，与 agent-orchestrator SDK 保持技术栈一致，降低维护成本
 - 框架选择追求简单可运维：开发阶段单机多进程即可运行，生产阶段可平滑过渡到真实分布式部署
 - 依赖尽量少且成熟稳定，避免引入过重的框架
+- SDK 作为 git submodule 引入，平台通过 adapter 层与具体 Agent 框架解耦
 
-### 7.2 各层技术选型
+### 8.2 各层技术选型
 
 | 层/服务 | 技术选型 | 选型理由 |
 |---|---|---|
 | 网关 | **FastAPI** + **Uvicorn** | 原生 async、自动 OpenAPI 文档、中间件生态成熟；Uvicorn 基于 uvloop 高性能 |
-| Agent 宿主服务 | **FastAPI** + **多进程**（`multiprocessing.Process`） | 每个宿主 worker 独立进程内持有一个 `OrchestratorClient` 实例，通过进程隔离防止单个实例崩溃影响其他；生产环境可扩展为多机部署 |
+| Agent 宿主服务 | **FastAPI** + **多进程** + **agent-orchestrator** | 每个宿主 worker 独立进程内持有一个 `OrchestratorClient` 实例，通过 AgentAdapter 注入对应框架；进程隔离防止单个实例崩溃影响其他 |
+| Agent 适配层 | **AgentAdapter Protocol** | SDK 定义的 `AgentAdapter` 协议，每个 Agent 框架一个适配器实现；当前内置 `openharness` 适配器 |
 | 记忆服务 | **FastAPI** + **SQLAlchemy 2.0**（async） | SQLAlchemy 的 async engine + async session 支持高并发数据库操作 |
 | Agent 市场服务 | **FastAPI** | 轻量 CRUD 服务，无重状态 |
 | 权限管理服务 | **FastAPI** | 轻量 CRUD 服务 |
@@ -157,7 +179,7 @@
 | 容器运行时 | **Podman**（无 daemon，rootless 可选）| 与 SDK 的 `PodmanDriver` 一致，无 daemon 架构更安全且无需 root 权限 |
 | 进程管理 | **supervisor**（开发/单机）/ **Kubernetes**（生产） | 开发阶段 supervisor 管理各服务进程，生产阶段 K8s 管理调度 |
 
-### 7.3 数据库选型
+### 8.3 数据库选型
 
 | 用途 | 选型 | 理由 |
 |---|---|---|
@@ -167,43 +189,58 @@
 | 事件总线 | **Redis Streams** | Celery 内置支持 Redis Streams 作为 broker；同时可用于服务间事件广播，无需额外引入 RabbitMQ/Kafka |
 | 大文件/二进制资产 | **本地文件系统**（开发）/ **MinIO**（生产） | 记忆服务中的大文件存储在对象存储，数据库仅存元数据和路径引用 |
 
-### 7.4 包管理与服务骨架
+### 8.4 包管理与服务骨架
 
-使用统一的 Python 包结构，每个服务作为独立的 Python 包：
+agent-orchestrator SDK 作为 git submodule 引入（`agent-orchestrator/`），平台代码通过 adapter 层与其交互。每个服务作为独立的 Python 包：
 
 ```
-OpenHarnessEnterprise/
+agent-platform/                          # 主仓库
+├── .gitmodules                          # submodule 配置
+├── agent-orchestrator/                  # SDK（git submodule: wlxms/agent-orchestrator）
+│   ├── src/agent_orchestrator/
+│   │   ├── contracts/adapter.py         # AgentAdapter Protocol 定义
+│   │   ├── service/message_service.py   # 消息服务（支持 adapter 注入）
+│   │   └── client.py                    # OrchestratorClient
+│   └── pyproject.toml
+├── agents/                              # Agent 框架适配器
+│   └── openharness/                     # OpenHarness 适配器
+│       ├── adapter.py                   # OpenHarnessAdapter 实现
+│       └── config.py                    # 默认配置
 ├── services/
-│   ├── gateway/           # 网关
+│   ├── gateway/                         # 网关
 │   │   ├── pyproject.toml
-│   │   └── src/gateway/
-│   ├── host/              # Agent 宿主服务
+│   │   └── src/agentp_gateway/
+│   ├── host/                            # Agent 宿主服务
 │   │   ├── pyproject.toml
-│   │   └── src/host/
-│   ├── memory/            # 记忆服务
+│   │   └── src/agentp_host/
+│   ├── memory/                          # 记忆服务
 │   │   ├── pyproject.toml
-│   │   └── src/memory/
-│   ├── market/            # Agent 市场服务
+│   │   └── src/agentp_memory/
+│   ├── market/                          # Agent 市场服务
 │   │   ├── pyproject.toml
-│   │   └── src/market/
-│   ├── auth/              # 权限管理服务
+│   │   └── src/agentp_market/
+│   ├── auth/                            # 权限管理服务
 │   │   ├── pyproject.toml
-│   │   └── src/auth/
-│   ├── scheduler/         # 中央调度服务
+│   │   └── src/agentp_auth/
+│   ├── billing/                         # 计费服务
 │   │   ├── pyproject.toml
-│   │   └── src/scheduler/
-│   └── shared/            # 公共库（模型、工具函数、配置基类）
+│   │   └── src/agentp_billing/
+│   ├── scheduler/                       # 中央调度服务
+│   │   ├── pyproject.toml
+│   │   └── src/agentp_scheduler/
+│   └── shared/                          # 公共库（模型、工具函数、配置基类）
 │       ├── pyproject.toml
-│       └── src/ohent_shared/
-├── frontend/              # 前端 SPA
-├── deploy/                # 部署配置
-│   ├── supervisor/        # supervisor 配置（开发/单机）
-│   ├── docker-compose.yml  # 或 podman-compose / podman play kube
-│   └── k8s/               # K8s manifests（生产）
-└── docs/
+│       └── src/agentp_shared/
+├── tests/                               # 集成测试
+├── scripts/                             # 开发/部署脚本
+│   ├── dev_start.ps1                    # 开发环境启动
+│   └── verify_full_chain.ps1            # 全链路验证
+├── frontend/                            # 前端 SPA
+├── docs/                                # 文档
+└── pyproject.toml                       # 顶层项目配置
 ```
 
-`ohent_shared` 公共库提供：
+`agentp_shared` 公共库提供：
 - 统一的 Pydantic 模型（InstanceRecord、OrganizationRecord、UsageSnapshot 等，与 SDK contracts 对齐）
 - 统一的错误体系（对应 SDK 的 `ErrorCode`/`OrchestratorError`）
 - 请求上下文工具（RequestContext：tenant_id、user_id、org_id、permissions）
@@ -213,9 +250,9 @@ OpenHarnessEnterprise/
 
 ---
 
-## 八、微服务实现与服务间交互
+## 九、微服务实现与服务间交互
 
-### 8.1 架构总览
+### 9.1 架构总览
 
 系统采用**星型拓扑**：中央调度服务作为业务编排中枢，网关作为外部唯一入口。业务服务（Agent 宿主、市场、权限管理）处于同一层级，记忆服务下沉为基础设施层。
 
@@ -268,9 +305,9 @@ OpenHarnessEnterprise/
   - 记忆服务（路径式资产存取）
   - Redis（缓存/限流/事件总线/Celery Broker）
   - PostgreSQL（关系型业务数据）
-  - Celery（异步任务执行框架，详见 8.1.1）
+  - Celery（异步任务执行框架，详见 9.1.1）
 
-### 8.1.1 Celery 的定位与职责
+### 9.1.1 Celery 的定位与职责
 
 **Celery 不是独立服务，而是基础设施层的任务执行框架**。它的代码和任务定义都归属于中央调度服务（`services/scheduler/`），worker 进程只是加载并执行这些任务代码的运行时。
 
@@ -304,9 +341,9 @@ services/scheduler/
 3. **延迟任务**：审批超时自动驳回、实例到期提醒
 4. **重试保障**：宿主服务临时不可用时，任务自动等待后重试，无需人工干预
 
-**关键约束**：Celery 的任务函数必须是**可序列化的纯逻辑**，不能持有数据库连接或 HTTP 客户端等状态。任务执行时通过 `ohent_shared` 的工厂函数按需创建连接。
+**关键约束**：Celery 的任务函数必须是**可序列化的纯逻辑**，不能持有数据库连接或 HTTP 客户端等状态。任务执行时通过 `agentp_shared` 的工厂函数按需创建连接。
 
-### 8.1.2 关于"其他服务通过记忆服务操作数据库"的设计决策
+### 9.1.2 关于"其他服务通过记忆服务操作数据库"的设计决策
 
 **不建议所有服务都通过记忆服务间接操作数据库**。原因如下：
 
@@ -323,9 +360,9 @@ services/scheduler/
 | 计费流水、实例记录 | **各服务直接连接 PostgreSQL** | 计费引擎直接 `INSERT INTO usage_records` |
 | 缓存、限流、事件 | **各服务直接连接 Redis** | 网关直接操作 Redis 计数器 |
 
-记忆服务的定位是**统一的数据资产存取层**，而非通用的数据库代理。业务服务直接使用 `ohent_shared` 提供的数据库连接工厂访问 PostgreSQL，记忆服务专注于路径式资产场景。
+记忆服务的定位是**统一的数据资产存取层**，而非通用的数据库代理。业务服务直接使用 `agentp_shared` 提供的数据库连接工厂访问 PostgreSQL，记忆服务专注于路径式资产场景。
 
-### 8.2 服务间通信方式
+### 9.2 服务间通信方式
 
 系统采用三种通信方式，按场景选择：
 
@@ -336,7 +373,7 @@ services/scheduler/
 **实现**：服务内部通过 `httpx.AsyncClient` 调用目标服务的内网 HTTP 端口。
 
 ```python
-# ohent_shared 中提供的服务调用工具
+# agentp_shared 中提供的服务调用工具
 class ServiceClient:
     """封装服务间同步调用，自动注入 request_id 和租户信息"""
 
@@ -389,7 +426,7 @@ class ServiceClient:
 **实现**：基于 Redis Streams 的轻量级事件总线。
 
 ```python
-# ohent_shared/event_bus.py
+# agentp_shared/event_bus.py
 import json
 import asyncio
 from dataclasses import dataclass
@@ -412,7 +449,7 @@ class EventBus:
 
     async def publish(self, event: Event):
         await self._redis.xadd(
-            f"ohent:events:{event.topic}",
+            f"agentp:events:{event.topic}",
             {
                 "payload": json.dumps(event.payload),
                 "source": event.source,
@@ -426,7 +463,7 @@ class EventBus:
         for topic, handlers in self._handlers.items():
             group = f"{service_name}:{topic}"
             try:
-                await self._redis.xgroup_create(f"ohent:events:{topic}", group, id="0", mkstream=True)
+                await self._redis.xgroup_create(f"agentp:events:{topic}", group, id="0", mkstream=True)
             except Exception:
                 pass  # group 已存在
             asyncio.create_task(self._poll(topic, group, handlers))
@@ -452,7 +489,7 @@ class EventBus:
 # scheduler/tasks.py
 from celery import Celery
 
-app = Celery("ohent_scheduler", broker="redis://localhost:6379/0", backend="redis://localhost:6379/1")
+app = Celery("agentp_scheduler", broker="redis://localhost:6379/0", backend="redis://localhost:6379/1")
 
 @app.task(bind=True, max_retries=3, default_retry_delay=60)
 def create_instance_async(self, instance_config: dict, ctx: dict):
@@ -489,9 +526,9 @@ app.conf.beat_schedule = {
 }
 ```
 
-### 8.3 各服务内部实现要点
+### 9.3 各服务内部实现要点
 
-#### 8.3.1 网关实现
+#### 9.3.1 网关实现
 
 ```python
 # gateway/app.py
@@ -500,7 +537,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
 
-app = FastAPI(title="OpenHarness Enterprise Gateway")
+app = FastAPI(title="agent-platform Gateway")
 
 # 中间件链：CORS → 限流 → 鉴权 → 路由转发
 @app.middleware("http")
@@ -525,17 +562,17 @@ async def gateway_pipeline(request: Request, call_next):
 
 网关本质是一个反向代理，核心逻辑是：鉴权 → 限流 → 转发。不包含业务逻辑，保持无状态。
 
-#### 8.3.2 Agent 宿主服务实现
+#### 9.3.2 Agent 宿主服务实现
 
-宿主服务是整个系统最关键的服务，直接操控 SDK。其内部采用**进程池模型**：
+宿主服务是整个系统最关键的服务，通过 agent-orchestrator SDK 操控 Agent 实例。其内部采用**进程池模型 + Adapter 注入**：
 
 ```
 宿主服务主进程（FastAPI HTTP Server）
     │
     ├── 进程池（N 个 worker 进程）
-    │   ├── Worker-0: OrchestratorClient 实例（含 PodmanDriver）
-    │   ├── Worker-1: OrchestratorClient 实例
-    │   └── Worker-N: OrchestratorClient 实例
+    │   ├── Worker-0: OrchestratorClient(adapter=OpenHarnessAdapter())
+    │   ├── Worker-1: OrchestratorClient(adapter=OpenHarnessAdapter())
+    │   └── Worker-N: OrchestratorClient(adapter=OpenHarnessAdapter())
     │
     └── 状态追踪（主进程内存 + PostgreSQL 持久化）
 ```
@@ -543,16 +580,21 @@ async def gateway_pipeline(request: Request, call_next):
 ```python
 # host/app.py
 from fastapi import FastAPI
-from concurrent.futures import ProcessPoolExecutor
-import multiprocessing
+from agent_orchestrator import OrchestratorClient
+from agents.openharness.adapter import OpenHarnessAdapter
+from agents.openharness.config import DEFAULT_CONFIG
 
 app = FastAPI(title="Agent Host Service")
+
+# 适配器：桥接 orchestrator 与具体 Agent 框架
+adapter = OpenHarnessAdapter(DEFAULT_CONFIG)
 
 # 进程池：每个 worker 独立持有 SDK 客户端
 class HostWorker:
     """运行在独立进程中，持有 OrchestratorClient"""
     def __init__(self):
         self.client = OrchestratorClient(
+            adapter=adapter,
             allowed_roots=config.ALLOWED_ROOTS,
             runtime="podman",
             podman_image=config.PODMAN_IMAGE,
@@ -585,11 +627,14 @@ def _worker_loop(task_queue: multiprocessing.Queue, result_queue: multiprocessin
 ```
 
 **宿主服务与 SDK 的集成要点**：
-- 每个 worker 进程独立持有 `OrchestratorClient`，其中 `PodmanDriver` 通过 Podman CLI（`subprocess`）与宿主机 Podman 通信
+- 每个 worker 进程独立持有 `OrchestratorClient`，通过 `adapter` 参数注入 Agent 框架适配器
+- 适配器（如 `OpenHarnessAdapter`）负责将编排请求翻译为具体框架的 CLI 参数和环境变量
+- 新增 Agent 框架只需实现 `AgentAdapter` 协议并注入宿主服务，无需修改 SDK 或平台核心代码
+- `PodmanDriver` 通过 Podman CLI（`subprocess`）与宿主机 Podman 通信
 - `SQLiteStore` 在 worker 内使用 `:memory:` 模式仅做请求去重，持久化数据同步写入 PostgreSQL（由主进程负责）
 - worker 通过 multiprocessing.Queue 与主进程通信，主进程（FastAPI）将 HTTP 请求序列化为 task dict 投递到对应 worker 的队列
 
-#### 8.3.3 记忆服务实现
+#### 9.3.3 记忆服务实现
 
 ```python
 # memory/app.py
@@ -599,7 +644,7 @@ from sqlalchemy.orm import sessionmaker
 
 app = FastAPI(title="Memory Service")
 
-engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/ohent")
+engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/agentp")
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession)
 
 # 路径式存储 API
@@ -624,14 +669,14 @@ async def delete_asset(org_id: str, path: str):
 - `org-001/memories/user-042/session-config.json`
 - `org-001/templates/general-assistant/agent.yaml`
 
-#### 8.3.4 中央调度服务实现
+#### 9.3.4 中央调度服务实现
 
 中央调度服务是业务编排层，封装所有跨服务调用：
 
 ```python
 # scheduler/app.py
 from fastapi import FastAPI, Depends
-from ohent_shared import ServiceClient, RequestContext, EventBus
+from agentp_shared import ServiceClient, RequestContext, EventBus
 
 app = FastAPI(title="Central Scheduler")
 svc = ServiceClient(service_registry=config.SERVICE_REGISTRY)
@@ -662,79 +707,34 @@ async def send_message(id: str, req: MessageRequest, ctx: RequestContext = Depen
     return await svc.call("host", "POST", f"/internal/instances/{id}/message", json=req.model_dump(), ctx=ctx)
 ```
 
-### 8.4 服务启动与进程模型
+### 9.4 服务启动与进程模型
 
 #### 开发/单机模式（supervisor 管理）
 
-使用 `supervisor` 管理所有进程，单机运行全部服务：
+使用 `scripts/dev_start.ps1` 管理所有进程（开发阶段），单机运行全部服务：
 
-```ini
-# deploy/supervisor/supervisord.conf
-[program:gateway]
-command=uvicorn gateway.app:app --host 0.0.0.0 --port 8000
-directory=services/gateway
-autostart=true
-autorestart=true
+当前开发阶段端口分配：
 
-[program:scheduler]
-command=uvicorn scheduler.app:app --host 127.0.0.1 --port 8100
-directory=services/scheduler
-autostart=true
-autorestart=true
-
-[program:host]
-command=uvicorn host.app:app --host 127.0.0.1 --port 8200
-directory=services/host
-autostart=true
-autorestart=true
-; 宿主服务的 worker 进程由 host app 自行 fork，不归 supervisor 管理
-
-[program:memory]
-command=uvicorn memory.app:app --host 127.0.0.1 --port 8300
-directory=services/memory
-autostart=true
-autorestart=true
-
-[program:market]
-command=uvicorn market.app:app --host 127.0.0.1 --port 8400
-directory=services/market
-autostart=true
-autorestart=true
-
-[program:auth]
-command=uvicorn auth.app:app --host 127.0.0.1 --port 8500
-directory=services/auth
-autostart=true
-autorestart=true
-
-[program:celery-worker]
-command=celery -A scheduler.tasks worker --loglevel=info --concurrency=4
-directory=services/scheduler
-autostart=true
-autorestart=true
-
-[program:celery-beat]
-command=celery -A scheduler.tasks beat --loglevel=info
-directory=services/scheduler
-autostart=true
-autorestart=true
-
-[program:redis]
-command=redis-server
-autostart=true
-autorestart=true
-```
+| 服务 | 端口 | 包名 |
+|---|---|---|
+| 网关 | 8000 | `agentp_gateway` |
+| 认证/权限 | 8001 | `agentp_auth` |
+| Agent 宿主 | 8002 | `agentp_host` |
+| 中央调度 | 8003 | `agentp_scheduler` |
+| 记忆服务 | 8004 | `agentp_memory` |
+| 市场服务 | 8005 | `agentp_market` |
+| 计费服务 | 8006 | `agentp_billing` |
 
 此模式下：
 - 网关对外暴露 `:8000`，所有外部请求走网关
 - 各微服务绑定 `127.0.0.1` 仅内网可访问
-- 单机单 Redis、单机 PostgreSQL
+- PostgreSQL（:5432）和 Redis（:6379）通过 Podman 容器运行
 - 宿主服务的 worker 进程池数量默认 = CPU 核数
 
 #### 生产模式（K8s 部署）
 
 ```
-Namespace: openharness-enterprise
+Namespace: agent-platform
 ├── Deployment: gateway          (replicas: 2+, 无状态)
 ├── Deployment: scheduler        (replicas: 2+, 无状态)
 ├── Deployment: host             (replicas: N, 有状态-绑定宿主节点)
@@ -757,19 +757,27 @@ Namespace: openharness-enterprise
 - PostgreSQL 可使用云托管 RDS 或 Patroni 高可用方案
 - `ServiceClient` 中的 `service_registry` 在 K8s 中使用 Service 名称（如 `http://memory-service:8002`）
 
-### 8.5 服务注册与服务发现
+### 9.5 服务注册与服务发现
 
 不引入独立的注册中心（如 Consul/Etcd），采用**静态配置 + 健康检查**的轻量方案：
 
 ```python
-# 各服务通过环境变量或配置文件获取其他服务地址
-SERVICE_REGISTRY = {
-    "host": os.getenv("OHENT_HOST_URL", "http://127.0.0.1:8200"),
-    "memory": os.getenv("OHENT_MEMORY_URL", "http://127.0.0.1:8300"),
-    "market": os.getenv("OHENT_MARKET_URL", "http://127.0.0.1:8400"),
-    "auth": os.getenv("OHENT_AUTH_URL", "http://127.0.0.1:8500"),
-    "scheduler": os.getenv("OHENT_SCHEDULER_URL", "http://127.0.0.1:8100"),
-}
+# agentp_shared/config.py 中通过 pydantic-settings 管理配置
+# 环境变量前缀统一为 AGENTP_（pydantic-settings 自动全大写匹配）
+GATEWAY_PORT = 8000; AUTH_PORT = 8001; HOST_PORT = 8002
+SCHEDULER_PORT = 8003; MEMORY_PORT = 8004; MARKET_PORT = 8005; BILLING_PORT = 8006
+
+class DatabaseSettings(BaseSettings):
+    url: str = "postgresql+asyncpg://agentp:agentp_dev@localhost:5432/agent_platform"
+    model_config = {"env_prefix": "AGENTP_DB_"}
+
+class RedisSettings(BaseSettings):
+    url: str = "redis://localhost:6379/0"
+    model_config = {"env_prefix": "AGENTP_REDIS_"}
+
+class JWTSettings(BaseSettings):
+    secret_key: str = "agentp-dev-secret-key-change-in-production"
+    model_config = {"env_prefix": "AGENTP_JWT_"}
 
 # 每个服务暴露 /health 端点，中央调度服务定期探测
 @app.get("/health")
@@ -779,7 +787,7 @@ async def health():
 
 K8s 模式下由 Kubernetes Service 自动提供服务发现；单机模式下通过 supervisor 的进程管理隐含了服务可用性（进程挂了 supervisor 自动重启）。
 
-### 8.6 数据一致性策略
+### 9.6 数据一致性策略
 
 系统采用**最终一致性**模型，不做分布式事务：
 

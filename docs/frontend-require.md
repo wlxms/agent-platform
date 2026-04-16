@@ -1,4 +1,4 @@
-# OpenHarness Enterprise - Frontend Requirements
+﻿# agent-platform - Frontend Requirements
 
 > 本文档定义前端管理控制台的需求，仅依赖后端网关暴露的 HTTP API 契约。
 > API 接口的完整定义参见 [api-protocol.md](api-protocol.md)，后端实现参见 [require.md](require.md)。

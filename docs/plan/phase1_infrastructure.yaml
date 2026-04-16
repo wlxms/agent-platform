@@ -1,0 +1,78 @@
+plan_id: phase1_infrastructure
+objective: "Phase 1 - Infrastructure Layer: Database models, Alembic migrations, Event Bus, Redis integration"
+complexity: medium
+status: in_progress
+created: "2026-04-17"
+
+waves:
+  - wave: 1
+    tasks:
+      - task_id: T1.1
+        title: "Create SQLAlchemy database models"
+        agent: gem-implementer
+        status: pending
+        description: >
+          Create all core SQLAlchemy models in shared/models.py.
+          Models: Organization, User, ApiKey, AgentInstance, UsageRecord,
+          MemoryAsset, BillingRule, TaskRecord.
+          Use UUID primary keys where appropriate, timestamps with timezone.
+          Add indexes for common query patterns.
+        files:
+          - "services/shared/src/agentp_shared/models.py"
+
+      - task_id: T1.2
+        title: "Set up Alembic migration framework"
+        agent: gem-implementer
+        status: pending
+        description: >
+          Initialize Alembic in the project root, configure it to use
+          agentp_shared.db settings, generate initial migration from models.
+          Create a script to run migrations.
+        files:
+          - "agent-platform/alembic.ini"
+          - "agent-platform/alembic/env.py"
+          - "agent-platform/alembic/versions/001_initial.py"
+
+      - task_id: T1.3
+        title: "Implement Redis Event Bus"
+        agent: gem-implementer
+        status: pending
+        description: >
+          Create event bus using Redis Streams in shared/event_bus.py.
+          Support publish/subscribe, consumer groups, event persistence.
+          Define core event types: agent.created, agent.destroyed, agent.usage, quota.exceeded.
+        files:
+          - "services/shared/src/agentp_shared/event_bus.py"
+
+  - wave: 2
+    tasks:
+      - task_id: T1.4
+        title: "Write unit tests for models and event bus"
+        agent: gem-implementer
+        status: pending
+        description: >
+          Write comprehensive unit tests for all new shared components.
+          Test model creation, validation, relationships.
+          Test event bus publish/subscribe with mocked Redis.
+        files:
+          - "agent-platform/tests/test_models.py"
+          - "agent-platform/tests/test_event_bus.py"
+
+      - task_id: T1.5
+        title: "Write smoke tests (requires PostgreSQL + Redis)"
+        agent: gem-implementer
+        status: pending
+        description: >
+          Write integration smoke tests that require running PostgreSQL and Redis.
+          Test real DB connection, table creation, CRUD operations.
+          Test real Redis event bus publish/subscribe.
+        files:
+          - "agent-platform/tests/test_smoke_infrastructure.py"
+
+      - task_id: T1.6
+        title: "Verify existing tests still pass"
+        agent: gem-implementer
+        status: pending
+        description: >
+          Run all existing unit tests to ensure no regressions from shared lib changes.
+          The new models module should not break existing imports.

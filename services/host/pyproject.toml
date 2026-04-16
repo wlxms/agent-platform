@@ -3,15 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ohent-host"
+name = "agentp-host"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
-    "ohent-shared",
+    "agentp-shared",
     "agent-orchestrator",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ohent_host"]
+packages = ["src/agentp_host"]

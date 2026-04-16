@@ -22,4 +22,5 @@ asyncio_mode = "auto"
 markers = [
     "e2e: End-to-end tests (require running services)",
     "integration: Cross-service integration tests (require running services)",
+    "smoke: Infrastructure smoke tests (PostgreSQL + Redis)",
 ]

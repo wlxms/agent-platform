@@ -1,4 +1,4 @@
-# OpenHarness Enterprise - API Protocol
+﻿# agent-platform - API Protocol
 
 > 本文档定义后端网关对外暴露的完整 HTTP API 契约。
 > 前端开发参见 [frontend-require.md](frontend-require.md)，后端实现参见 [require.md](require.md)。

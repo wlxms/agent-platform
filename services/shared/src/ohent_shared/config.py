@@ -1,4 +1,4 @@
-"""Service ports, URLs, and configuration classes."""
+﻿"""Service ports, URLs, and configuration classes."""
 from pydantic_settings import BaseSettings
 
 # Service ports
@@ -20,28 +20,28 @@ BILLING_URL = f"http://localhost:{BILLING_PORT}"
 
 
 class DatabaseSettings(BaseSettings):
-    url: str = "postgresql+asyncpg://ohent:ohent_dev@localhost:5432/oh_enterprise"
+    url: str = "postgresql+asyncpg://agentp:agentp_dev@localhost:5432/agent_platform"
     echo: bool = False
     pool_size: int = 10
-    model_config = {"env_prefix": "OHENT_DB_"}
+    model_config = {"env_prefix": "agentp_DB_"}
 
 
 class RedisSettings(BaseSettings):
     url: str = "redis://localhost:6379/0"
-    model_config = {"env_prefix": "OHENT_REDIS_"}
+    model_config = {"env_prefix": "agentp_REDIS_"}
 
 
 class JWTSettings(BaseSettings):
-    secret_key: str = "ohent-dev-secret-key-change-in-production"
+    secret_key: str = "agentp-dev-secret-key-change-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 24 * 60
     refresh_token_expire_days: int = 7
-    model_config = {"env_prefix": "OHENT_JWT_"}
+    model_config = {"env_prefix": "agentp_JWT_"}
 
 
 class Settings(BaseSettings):
     debug: bool = False
-    model_config = {"env_prefix": "OHENT_"}
+    model_config = {"env_prefix": "agentp_"}
 
 
 db_settings = DatabaseSettings()

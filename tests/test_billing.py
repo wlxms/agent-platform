@@ -1,11 +1,11 @@
-"""Billing service API tests - internal endpoints."""
+﻿"""Billing service API tests - internal endpoints."""
 import pytest
 from httpx import AsyncClient, ASGITransport
 
 
 @pytest.fixture(autouse=True)
 def setup_billing():
-    from ohent_billing.service import BillingService, init_billing
+    from agentp_billing.service import BillingService, init_billing
     init_billing()
 
 
@@ -16,7 +16,7 @@ def anyio_backend():
 
 @pytest.mark.asyncio
 async def test_health():
-    from ohent_billing.main import app
+    from agentp_billing.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/health")
         assert resp.status_code == 200
@@ -27,7 +27,7 @@ async def test_health():
 
 @pytest.mark.asyncio
 async def test_summary():
-    from ohent_billing.main import app
+    from agentp_billing.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/internal/billing/usage/summary?period=month")
         assert resp.status_code == 200
@@ -42,7 +42,7 @@ async def test_summary():
 
 @pytest.mark.asyncio
 async def test_summary_by_model():
-    from ohent_billing.main import app
+    from agentp_billing.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/internal/billing/usage/summary?period=month")
         assert resp.status_code == 200
@@ -59,7 +59,7 @@ async def test_summary_by_model():
 
 @pytest.mark.asyncio
 async def test_records_list():
-    from ohent_billing.main import app
+    from agentp_billing.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/internal/billing/usage/records")
         assert resp.status_code == 200
@@ -84,7 +84,7 @@ async def test_records_list():
 
 @pytest.mark.asyncio
 async def test_records_filter_by_instance_id():
-    from ohent_billing.main import app
+    from agentp_billing.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/internal/billing/usage/records?instance_id=inst-001")
         assert resp.status_code == 200
@@ -96,7 +96,7 @@ async def test_records_filter_by_instance_id():
 
 @pytest.mark.asyncio
 async def test_records_filter_by_model():
-    from ohent_billing.main import app
+    from agentp_billing.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/internal/billing/usage/records?model=gpt-4")
         assert resp.status_code == 200
@@ -108,7 +108,7 @@ async def test_records_filter_by_model():
 
 @pytest.mark.asyncio
 async def test_records_pagination():
-    from ohent_billing.main import app
+    from agentp_billing.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/internal/billing/usage/records?page=1&page_size=2")
         assert resp.status_code == 200
@@ -121,7 +121,7 @@ async def test_records_pagination():
 
 @pytest.mark.asyncio
 async def test_records_empty_filter():
-    from ohent_billing.main import app
+    from agentp_billing.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/internal/billing/usage/records?instance_id=nonexistent")
         assert resp.status_code == 200

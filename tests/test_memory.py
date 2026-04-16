@@ -1,8 +1,8 @@
-"""Memory service tests - Wave 5."""
+﻿"""Memory service tests - Wave 5."""
 import pytest
 from httpx import AsyncClient, ASGITransport
 
-from ohent_memory.main import app
+from agentp_memory.main import app
 
 
 @pytest.mark.asyncio

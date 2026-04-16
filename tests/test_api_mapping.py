@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 import tempfile
 import shutil
 from pathlib import Path
@@ -6,13 +6,13 @@ from pathlib import Path
 
 class TestInstanceMapper:
     def setup_method(self):
-        self.temp_dir = tempfile.mkdtemp(prefix="ohent-map-test-")
+        self.temp_dir = tempfile.mkdtemp(prefix="agentp-map-test-")
 
     def teardown_method(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_map_create_request_defaults(self):
-        from ohent_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
+        from agentp_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
 
         settings = AgentMappingSettings(
             workspace_base=f"{self.temp_dir}/workspaces",
@@ -31,7 +31,7 @@ class TestInstanceMapper:
         assert Path(seed.template_dir).exists()
 
     def test_map_create_request_with_template(self):
-        from ohent_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
+        from agentp_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
 
         custom_tmpl = Path(self.temp_dir) / "templates" / "python-dev"
         custom_tmpl.mkdir(parents=True)
@@ -51,7 +51,7 @@ class TestInstanceMapper:
         assert seed.template_dir == str(custom_tmpl)
 
     def test_to_sdk_request(self):
-        from ohent_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
+        from agentp_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
 
         settings = AgentMappingSettings(
             workspace_base=f"{self.temp_dir}/workspaces",
@@ -70,7 +70,7 @@ class TestInstanceMapper:
         assert sdk_req.seed.template_dir
 
     def test_creates_default_template_on_init(self):
-        from ohent_shared.api_mapping import InstanceMapper, AgentMappingSettings
+        from agentp_shared.api_mapping import InstanceMapper, AgentMappingSettings
 
         settings = AgentMappingSettings(
             workspace_base=f"{self.temp_dir}/workspaces",
@@ -84,7 +84,7 @@ class TestInstanceMapper:
         assert any(default_tmpl.iterdir())
 
     def test_creates_workspace_dir(self):
-        from ohent_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
+        from agentp_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
 
         settings = AgentMappingSettings(
             workspace_base=f"{self.temp_dir}/workspaces",
@@ -99,7 +99,7 @@ class TestInstanceMapper:
         assert Path(workspace_root).is_dir()
 
     def test_end_to_end_with_sdk(self):
-        from ohent_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
+        from agentp_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
         from agent_orchestrator import OrchestratorClient
 
         settings = AgentMappingSettings(

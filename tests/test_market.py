@@ -1,13 +1,13 @@
-"""Tests for Market service (Wave 5)."""
+﻿"""Tests for Market service (Wave 5)."""
 import pytest
 from httpx import AsyncClient, ASGITransport
-from ohent_market.main import app
+from agentp_market.main import app
 
 
 @pytest.fixture(autouse=True)
 def _reset_service():
     """Reset singleton before each test."""
-    from ohent_market.api.v1.templates import reset_service
+    from agentp_market.api.v1.templates import reset_service
     reset_service()
 
 

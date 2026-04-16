@@ -22,3 +22,6 @@ htmlcov/
 *.swo
 *~
 uv.lock
+logs/
+_check_db.py
+_list_tables.py

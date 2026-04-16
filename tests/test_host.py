@@ -1,11 +1,11 @@
-import pytest
+﻿import pytest
 from httpx import AsyncClient, ASGITransport
 
 
 @pytest.fixture(autouse=True)
 def _reset_host_service():
     """Reset global HostService singleton so each test gets a fresh instance."""
-    import ohent_host.api.v1.agents as _mod
+    import agentp_host.api.v1.agents as _mod
     _mod._service = None
     yield
     _mod._service = None
@@ -13,7 +13,7 @@ def _reset_host_service():
 
 @pytest.mark.asyncio
 async def test_health():
-    from ohent_host.main import app
+    from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/health")
         assert resp.status_code == 200
@@ -22,7 +22,7 @@ async def test_health():
 
 @pytest.mark.asyncio
 async def test_create_agent():
-    from ohent_host.main import app
+    from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post("/internal/agents", json={"name": "test-agent"})
         assert resp.status_code == 200
@@ -34,7 +34,7 @@ async def test_create_agent():
 
 @pytest.mark.asyncio
 async def test_list_agents():
-    from ohent_host.main import app
+    from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.post("/internal/agents", json={"name": "list-test"})
         resp = await client.get("/internal/agents")
@@ -46,7 +46,7 @@ async def test_list_agents():
 
 @pytest.mark.asyncio
 async def test_get_agent():
-    from ohent_host.main import app
+    from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         create_resp = await client.post("/internal/agents", json={"name": "get-test"})
         agent_id = create_resp.json()["data"]["id"]
@@ -57,7 +57,7 @@ async def test_get_agent():
 
 @pytest.mark.asyncio
 async def test_destroy_agent():
-    from ohent_host.main import app
+    from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         create_resp = await client.post("/internal/agents", json={"name": "destroy-test"})
         agent_id = create_resp.json()["data"]["id"]
@@ -68,7 +68,7 @@ async def test_destroy_agent():
 
 @pytest.mark.asyncio
 async def test_send_message():
-    from ohent_host.main import app
+    from agentp_host.main import app
     import os
     os.environ["DS_API_KEY"] = "sk-3aa4613249a34bc6a54d14f561ca7597"
     try:
@@ -89,7 +89,7 @@ async def test_send_message():
 
 @pytest.mark.asyncio
 async def test_send_message_no_model():
-    from ohent_host.main import app
+    from agentp_host.main import app
     import os
     os.environ["DS_API_KEY"] = "sk-3aa4613249a34bc6a54d14f561ca7597"
     try:
@@ -109,8 +109,8 @@ async def test_send_message_no_model():
 @pytest.mark.asyncio
 async def test_send_message_no_api_key():
     """send_message without DS_API_KEY: HostService wraps error in RuntimeError."""
-    from ohent_host.service import HostService
-    from ohent_shared.api_mapping import CreateAgentRequest
+    from agentp_host.service import HostService
+    from agentp_shared.api_mapping import CreateAgentRequest
     import os
     old = os.environ.pop("DS_API_KEY", None)
     try:
@@ -129,7 +129,7 @@ async def test_send_message_no_api_key():
 
 @pytest.mark.asyncio
 async def test_get_agent_not_found():
-    from ohent_host.main import app
+    from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/internal/agents/nonexistent-id")
         assert resp.status_code == 404
@@ -138,8 +138,8 @@ async def test_get_agent_not_found():
 @pytest.mark.asyncio
 async def test_list_agents_empty():
     """Fresh service should return empty list initially (if no instances created)."""
-    from ohent_host.main import app
-    from ohent_host.service import HostService
+    from agentp_host.main import app
+    from agentp_host.service import HostService
     svc = HostService()
     result = svc.list_instances()
     # noop driver may have instances from other tests, so just check structure

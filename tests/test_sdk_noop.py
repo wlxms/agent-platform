@@ -8,7 +8,7 @@ class TestSDKNoopDriver:
 
     def setup_method(self):
         """Create temp template dir and allowed_roots."""
-        self.temp_dir = tempfile.mkdtemp(prefix="ohent-test-")
+        self.temp_dir = tempfile.mkdtemp(prefix="agentp-test-")
         self.template_dir = Path(self.temp_dir) / "templates" / "default"
         self.template_dir.mkdir(parents=True)
         # Create a dummy seed file so apply_seed has something to copy

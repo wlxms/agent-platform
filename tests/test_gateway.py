@@ -1,4 +1,4 @@
-"""Gateway middleware tests: JWT auth, request_id injection, request forwarding."""
+﻿"""Gateway middleware tests: JWT auth, request_id injection, request forwarding."""
 import pytest
 import jwt
 from httpx import AsyncClient, ASGITransport
@@ -7,7 +7,7 @@ from datetime import timedelta, timezone, datetime
 
 
 def _make_token(**overrides):
-    from ohent_shared.security import create_access_token
+    from agentp_shared.security import create_access_token
     data = {"sub": "user-1", "org_id": "org-001", "role": "user", "permissions": ["read"]}
     data.update(overrides)
     return create_access_token(data)
@@ -19,7 +19,7 @@ def _has_request_id(headers):
 
 @pytest.mark.asyncio
 async def test_health_no_auth():
-    from ohent_gateway.main import app
+    from agentp_gateway.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/health")
         assert resp.status_code == 200
@@ -29,12 +29,12 @@ async def test_health_no_auth():
 
 @pytest.mark.asyncio
 async def test_login_no_auth_required():
-    from ohent_gateway.main import app
+    from agentp_gateway.main import app
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"data": {"token": "test"}}
 
-    with patch("ohent_gateway.middleware.httpx.AsyncClient") as mock_client:
+    with patch("agentp_gateway.middleware.httpx.AsyncClient") as mock_client:
         mock_cm = AsyncMock()
         mock_cm.__aenter__ = AsyncMock(return_value=AsyncMock(
             request=AsyncMock(return_value=mock_response)
@@ -49,7 +49,7 @@ async def test_login_no_auth_required():
 
 @pytest.mark.asyncio
 async def test_protected_route_no_token():
-    from ohent_gateway.main import app
+    from agentp_gateway.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/api/v1/agents")
         assert resp.status_code == 401
@@ -59,14 +59,14 @@ async def test_protected_route_no_token():
 
 @pytest.mark.asyncio
 async def test_protected_route_valid_token():
-    from ohent_gateway.main import app
+    from agentp_gateway.main import app
     token = _make_token()
 
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"items": [], "total": 0, "page": 1, "page_size": 20}
 
-    with patch("ohent_gateway.middleware.httpx.AsyncClient") as mock_client:
+    with patch("agentp_gateway.middleware.httpx.AsyncClient") as mock_client:
         mock_cm = AsyncMock()
         mock_cm.__aenter__ = AsyncMock(return_value=AsyncMock(
             request=AsyncMock(return_value=mock_response)
@@ -85,8 +85,8 @@ async def test_protected_route_valid_token():
 
 @pytest.mark.asyncio
 async def test_expired_token():
-    from ohent_gateway.main import app
-    from ohent_shared.security import create_access_token
+    from agentp_gateway.main import app
+    from agentp_shared.security import create_access_token
     token = create_access_token({"sub": "u1"}, expires_delta=timedelta(seconds=-1))
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -100,7 +100,7 @@ async def test_expired_token():
 
 @pytest.mark.asyncio
 async def test_invalid_token():
-    from ohent_gateway.main import app
+    from agentp_gateway.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get(
             "/api/v1/agents",
@@ -111,10 +111,10 @@ async def test_invalid_token():
 
 @pytest.mark.asyncio
 async def test_upstream_unavailable():
-    from ohent_gateway.main import app
+    from agentp_gateway.main import app
     token = _make_token()
 
-    with patch("ohent_gateway.middleware.httpx.AsyncClient") as mock_client:
+    with patch("agentp_gateway.middleware.httpx.AsyncClient") as mock_client:
         mock_cm = AsyncMock()
         mock_instance = AsyncMock()
         mock_instance.request.side_effect = Exception("Scheduler not running")

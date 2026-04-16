@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Check,
     [switch]$Stop
 )
@@ -8,13 +8,13 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $VenvActivate = Join-Path $ProjectRoot ".venv\Scripts\Activate.ps1"
 
 $services = @(
-    @{ Name = "gateway";   Port = 8000; Module = "ohent_gateway" }
-    @{ Name = "auth";      Port = 8001; Module = "ohent_auth" }
-    @{ Name = "host";      Port = 8002; Module = "ohent_host" }
-    @{ Name = "scheduler"; Port = 8003; Module = "ohent_scheduler" }
-    @{ Name = "memory";    Port = 8004; Module = "ohent_memory" }
-    @{ Name = "market";    Port = 8005; Module = "ohent_market" }
-    @{ Name = "billing";   Port = 8006; Module = "ohent_billing" }
+    @{ Name = "gateway";   Port = 8000; Module = "agentp_gateway" }
+    @{ Name = "auth";      Port = 8001; Module = "agentp_auth" }
+    @{ Name = "host";      Port = 8002; Module = "agentp_host" }
+    @{ Name = "scheduler"; Port = 8003; Module = "agentp_scheduler" }
+    @{ Name = "memory";    Port = 8004; Module = "agentp_memory" }
+    @{ Name = "market";    Port = 8005; Module = "agentp_market" }
+    @{ Name = "billing";   Port = 8006; Module = "agentp_billing" }
 )
 
 function Write-Header($text) {

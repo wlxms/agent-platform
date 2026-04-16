@@ -1,6 +1,6 @@
-import pytest
+﻿import pytest
 from httpx import AsyncClient, ASGITransport
-from ohent_scheduler.main import app
+from agentp_scheduler.main import app
 
 
 @pytest.mark.asyncio

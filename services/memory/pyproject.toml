@@ -3,14 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ohent-memory"
+name = "agentp-memory"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
-    "ohent-shared",
+    "agentp-shared",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ohent_memory"]
+packages = ["src/agentp_memory"]
