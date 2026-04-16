@@ -10,7 +10,7 @@ dependencies = [
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
     "ohent-shared",
-    "openharness-sdk",
+    "agent-orchestrator",
 ]
 
 [tool.hatch.build.targets.wheel]

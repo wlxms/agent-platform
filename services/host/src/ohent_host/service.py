@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from openharness_sdk import OrchestratorClient
+from agent_orchestrator import OrchestratorClient
 from ohent_shared.api_mapping import AgentMappingSettings, CreateAgentRequest, InstanceMapper
 
 

@@ -100,7 +100,7 @@ class TestInstanceMapper:
 
     def test_end_to_end_with_sdk(self):
         from ohent_shared.api_mapping import InstanceMapper, CreateAgentRequest, AgentMappingSettings
-        from openharness_sdk import OrchestratorClient
+        from agent_orchestrator import OrchestratorClient
 
         settings = AgentMappingSettings(
             workspace_base=f"{self.temp_dir}/workspaces",

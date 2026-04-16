@@ -22,8 +22,8 @@ class TestSDKNoopDriver:
 
     def test_create_instance_returns_ready(self):
         """noop driver should create instance with status=ready."""
-        from openharness_sdk import OrchestratorClient
-        from openharness_sdk.contracts.models import SeedConfig, InstanceCreateRequest
+        from agent_orchestrator import OrchestratorClient
+        from agent_orchestrator.contracts.models import SeedConfig, InstanceCreateRequest
 
         client = OrchestratorClient(
             allowed_roots=self.allowed_roots,
@@ -47,8 +47,8 @@ class TestSDKNoopDriver:
 
     def test_list_instances(self):
         """list_instances should return created instances."""
-        from openharness_sdk import OrchestratorClient
-        from openharness_sdk.contracts.models import SeedConfig, InstanceCreateRequest
+        from agent_orchestrator import OrchestratorClient
+        from agent_orchestrator.contracts.models import SeedConfig, InstanceCreateRequest
 
         client = OrchestratorClient(
             allowed_roots=self.allowed_roots,
@@ -71,8 +71,8 @@ class TestSDKNoopDriver:
 
     def test_get_instance(self):
         """get_instance should return the created instance."""
-        from openharness_sdk import OrchestratorClient
-        from openharness_sdk.contracts.models import SeedConfig, InstanceCreateRequest
+        from agent_orchestrator import OrchestratorClient
+        from agent_orchestrator.contracts.models import SeedConfig, InstanceCreateRequest
 
         client = OrchestratorClient(
             allowed_roots=self.allowed_roots,
@@ -95,8 +95,8 @@ class TestSDKNoopDriver:
 
     def test_destroy_instance(self):
         """destroy_instance should remove the instance."""
-        from openharness_sdk import OrchestratorClient
-        from openharness_sdk.contracts.models import SeedConfig, InstanceCreateRequest
+        from agent_orchestrator import OrchestratorClient
+        from agent_orchestrator.contracts.models import SeedConfig, InstanceCreateRequest
 
         client = OrchestratorClient(
             allowed_roots=self.allowed_roots,
@@ -122,8 +122,8 @@ class TestSDKNoopDriver:
 
     def test_send_message(self):
         """send_message should return a MessageResult."""
-        from openharness_sdk import OrchestratorClient
-        from openharness_sdk.contracts.models import SeedConfig, InstanceCreateRequest
+        from agent_orchestrator import OrchestratorClient
+        from agent_orchestrator.contracts.models import SeedConfig, InstanceCreateRequest
 
         client = OrchestratorClient(
             allowed_roots=self.allowed_roots,

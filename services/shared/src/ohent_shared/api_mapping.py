@@ -1,7 +1,7 @@
 """API-to-SDK request mapping layer.
 
 Converts external API requests (api-protocol.md format) to SDK requests
-(openharness_sdk.contracts.models.InstanceCreateRequest).
+(agent_orchestrator.contracts.models.InstanceCreateRequest).
 """
 import uuid
 from pathlib import Path
@@ -45,7 +45,7 @@ class InstanceMapper:
 
         Returns: (workspace_root, template_id, seed_config)
         """
-        from openharness_sdk.contracts.models import SeedConfig
+        from agent_orchestrator.contracts.models import SeedConfig
 
         instance_id = str(uuid.uuid4())[:8]
         workspace_root = str(Path(self.settings.workspace_base) / f"{req.name}-{instance_id}")
@@ -64,7 +64,7 @@ class InstanceMapper:
 
     def to_sdk_request(self, req: CreateAgentRequest):
         """Full conversion to SDK InstanceCreateRequest."""
-        from openharness_sdk.contracts.models import InstanceCreateRequest
+        from agent_orchestrator.contracts.models import InstanceCreateRequest
 
         workspace_root, template_id, seed = self.map_create_request(req)
 
