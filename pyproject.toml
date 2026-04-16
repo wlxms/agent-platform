@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openharness-enterprise"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "services/shared/src",
+    "services/gateway/src",
+    "services/auth/src",
+    "services/host/src",
+    "services/scheduler/src",
+    "services/memory/src",
+    "services/market/src",
+    "services/billing/src",
+]
+asyncio_mode = "auto"
+markers = [
+    "e2e: End-to-end tests (require running services)",
+    "integration: Cross-service integration tests (require running services)",
+]

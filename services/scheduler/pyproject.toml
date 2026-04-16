@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ohent-scheduler"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+    "ohent-shared",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ohent_scheduler"]
