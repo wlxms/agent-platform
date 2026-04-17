@@ -253,6 +253,11 @@ async def create_api_key(
     expires_in_days: int | None = None,
 ) -> dict:
     """Create a new API key. Returns the raw key (only shown once)."""
+    if not name or not name.strip():
+        raise AuthError(code="VALIDATION_ERROR", message="API key name is required")
+    if expires_in_days is not None and expires_in_days < 1:
+        raise AuthError(code="VALIDATION_ERROR", message="expires_in_days must be at least 1")
+
     raw_key = _generate_api_key(org_id)
     key_hash = _hash_api_key(raw_key)
     key_prefix = raw_key[:8]
@@ -362,6 +367,9 @@ async def create_organization(
     plan: str = "free",
 ) -> dict:
     """Create a sub-organization."""
+    if not name or not name.strip():
+        raise AuthError(code="VALIDATION_ERROR", message="Organization name is required")
+
     org = Organization(
         id=str(uuid.uuid4()), name=name, parent_id=parent_id, plan=plan
     )

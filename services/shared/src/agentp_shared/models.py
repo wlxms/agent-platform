@@ -240,7 +240,7 @@ class MemoryAsset(Base):
     size_bytes: Mapped[int] = mapped_column(sa.BigInteger, default=0)
     storage_ref: Mapped[str] = mapped_column(String(500), default="")
     metadata_: Mapped[dict[str, Any]] = mapped_column(
-        "metadata", sa.JSON, default=dict, server_default="{}"
+        sa.JSON, default=dict, server_default="{}"
     )
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), default=_utcnow

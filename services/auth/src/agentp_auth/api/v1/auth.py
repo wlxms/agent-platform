@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Query
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 
 from agentp_shared.db import get_db
 from agentp_shared.responses import data_response, ok_response, list_response
@@ -11,29 +9,10 @@ from agentp_shared.security import decode_token
 from agentp_shared.schemas import PaginatedQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...schemas import LoginRequest, RefreshRequest
+from ...schemas import LoginRequest, RefreshRequest, CreateOrgRequest, CreateApiKeyRequest
 from ... import service
 
 router = APIRouter(prefix="/internal/auth", tags=["auth"])
-
-
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    errors = []
-    for err in exc.errors():
-        loc = " -> ".join(str(l) for l in err["loc"][1:])  # skip 'body' prefix
-        errors.append({
-            "field": loc,
-            "message": err["msg"],
-            "type": err["type"],
-        })
-    return JSONResponse(
-        status_code=422,
-        content={
-            "code": "VALIDATION_ERROR",
-            "message": "Input validation failed",
-            "details": errors,
-        },
-    )
 
 
 def _error_json(exc: service.AuthError) -> tuple[dict, int]:
@@ -126,9 +105,8 @@ async def get_org(org_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/org")
-async def create_org(request: Request, db: AsyncSession = Depends(get_db)):
-    body = await request.json()
-    result = await service.create_organization(db, name=body.get("name", ""), parent_id=body.get("parent_id"), plan=body.get("plan", "free"))
+async def create_org(req: CreateOrgRequest, db: AsyncSession = Depends(get_db)):
+    result = await service.create_organization(db, name=req.name, parent_id=req.parent_id, plan=req.plan)
     return data_response(result)
 
 
@@ -162,7 +140,7 @@ async def list_api_keys(request: Request, db: AsyncSession = Depends(get_db), pa
 
 
 @router.post("/api-keys")
-async def create_api_key(request: Request, db: AsyncSession = Depends(get_db)):
+async def create_api_key(req: CreateApiKeyRequest, request: Request, db: AsyncSession = Depends(get_db)):
     auth_header = request.headers.get("authorization", "")
     user_id = ""
     org_id = ""
@@ -174,13 +152,12 @@ async def create_api_key(request: Request, db: AsyncSession = Depends(get_db)):
         except Exception:
             pass
 
-    body = await request.json()
     try:
         result = await service.create_api_key(
             db=db, org_id=org_id, user_id=user_id,
-            name=body.get("name", "API Key"),
-            permissions=body.get("permissions"),
-            expires_in_days=body.get("expires_in_days"),
+            name=req.name,
+            permissions=req.permissions,
+            expires_in_days=req.expires_in_days,
         )
     except service.AuthError as exc:
         from fastapi.responses import JSONResponse

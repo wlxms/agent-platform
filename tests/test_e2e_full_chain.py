@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 GATEWAY_URL = "http://localhost:8000"
-API_KEY = "oh-admin-key"
+API_KEY = "oh-admin-key-default"
 
 
 def services_available() -> bool:
@@ -67,7 +67,7 @@ class TestFullChain:
         assert "refresh_token" in data
         assert "expires_at" in data
         assert data["user"]["role"] == "admin"
-        assert data["user"]["org_id"] == "root"
+        assert data["user"]["org_id"] == "org-root"
         assert "x-request-id" in resp.headers
 
     @pytest.mark.e2e

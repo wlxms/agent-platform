@@ -245,7 +245,7 @@ class TestMemoryAsset:
         from agentp_shared.models import MemoryAsset
         col_names = {c.name for c in MemoryAsset.__mapper__.columns}
         for expected in ("id", "org_id", "path", "content_type", "size_bytes",
-                         "storage_ref", "metadata", "created_at", "updated_at"):
+                         "storage_ref", "metadata_", "created_at", "updated_at"):
             assert expected in col_names
 
     def test_unique_constraint_org_path(self):
@@ -272,7 +272,7 @@ class TestMemoryAsset:
         assert cols["content_type"].default.arg == "application/octet-stream"
         assert cols["size_bytes"].default.arg == 0
         assert cols["storage_ref"].default.arg == ""
-        assert cols["metadata"].default.arg({}) == {}
+        assert cols["metadata_"].default.arg({}) == {}
 
     def test_instantiation(self):
         from agentp_shared.models import MemoryAsset

@@ -17,6 +17,7 @@ pythonpath = [
     "services/memory/src",
     "services/market/src",
     "services/billing/src",
+    "agent-orchestrator/src",
 ]
 asyncio_mode = "auto"
 markers = [

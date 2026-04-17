@@ -2,7 +2,7 @@ param()
 
 $ErrorActionPreference = "Stop"
 $Gateway = "http://localhost:8000"
-$ApiKey = "oh-admin-key"
+$ApiKey = "oh-admin-key-default"
 
 function Write-Step($num, $desc) {
     Write-Host ("`n[{0}] {1}" -f $num, $desc) -ForegroundColor Cyan

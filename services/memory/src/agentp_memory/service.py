@@ -1,75 +1,181 @@
-"""In-memory KV storage for Memory service (skeleton stage)."""
+"""Memory service — PostgreSQL-backed asset storage."""
 from __future__ import annotations
 
-import time
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select, delete, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
-class MemoryService:
-    def __init__(self) -> None:
-        self._assets: dict[str, dict[str, Any]] = {}
-        self._seed()
+from agentp_shared.models import MemoryAsset
 
-    # ------------------------------------------------------------------
-    # CRUD
-    # ------------------------------------------------------------------
+_utcnow = lambda: datetime.now(timezone.utc)
 
-    def create_asset(self, path: str, content: str, content_type: str = "text/plain") -> dict:
-        now = time.time()
-        if path in self._assets:
-            # Update existing asset
-            asset = self._assets[path]
-            asset["content"] = content
-            asset["content_type"] = content_type
-            asset["updated_at"] = now
-        else:
-            asset = {
-                "path": path,
-                "content": content,
-                "content_type": content_type,
-                "created_at": now,
-                "updated_at": now,
-            }
-            self._assets[path] = asset
-        return {
-            "path": asset["path"],
-            "content_type": asset["content_type"],
-            "created_at": asset["created_at"],
-            "updated_at": asset["updated_at"],
-        }
+DEFAULT_ORG_ID = "org-root"
 
-    def get_asset(self, path: str) -> dict | None:
-        asset = self._assets.get(path)
-        if asset is None:
-            return None
-        return dict(asset)
 
-    def list_assets(self, path_prefix: str | None = None) -> list[dict]:
-        result: list[dict] = []
-        for path, asset in self._assets.items():
-            if path_prefix and not path.startswith(path_prefix):
-                continue
-            name = path.rsplit("/", 1)[-1] if "/" in path else path
-            result.append({
-                "path": path,
-                "name": name,
-                "type": "file",
-                "size": len(asset["content"]),
-                "updated_at": asset["updated_at"],
-            })
-        return result
+class MemoryError(Exception):
+    def __init__(self, code: str, message: str, status_code: int = 400):
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+        super().__init__(message)
 
-    def delete_asset(self, path: str) -> bool:
-        if path in self._assets:
-            del self._assets[path]
-            return True
-        return False
 
-    # ------------------------------------------------------------------
-    # Seed sample data
-    # ------------------------------------------------------------------
+# ------------------------------------------------------------------
+# CRUD
+# ------------------------------------------------------------------
 
-    def _seed(self) -> None:
-        self.create_asset("system/prompt.txt", "You are a helpful assistant.", "text/plain")
-        self.create_asset("system/config.json", '{"model": "gpt-4"}', "application/json")
-        self.create_asset("workspace/notes.md", "# Notes\n\nSome notes here.", "text/markdown")
+async def create_asset(
+    db: AsyncSession,
+    *,
+    path: str,
+    content: str = "",
+    content_type: str = "text/plain",
+    org_id: str = DEFAULT_ORG_ID,
+) -> dict:
+    if not path or not path.strip():
+        raise MemoryError(code="VALIDATION_ERROR", message="Asset path is required")
+
+    path = path.strip()
+
+    # Upsert: find existing
+    result = await db.execute(
+        select(MemoryAsset).where(MemoryAsset.org_id == org_id, MemoryAsset.path == path)
+    )
+    existing = result.scalar_one_or_none()
+
+    now = _utcnow()
+    if existing is not None:
+        existing.content_type = content_type
+        existing.size_bytes = len(content.encode("utf-8")) if content else 0
+        existing.storage_ref = ""
+        existing.metadata_ = {"content": content}
+        existing.updated_at = now
+        await db.flush()
+        return _asset_to_dict(existing)
+    else:
+        asset = MemoryAsset(
+            id=str(uuid.uuid4()),
+            org_id=org_id,
+            path=path,
+            content_type=content_type,
+            size_bytes=len(content.encode("utf-8")) if content else 0,
+            storage_ref="",
+            metadata_={"content": content},
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(asset)
+        await db.flush()
+        return _asset_to_dict(asset)
+
+
+async def get_asset(
+    db: AsyncSession,
+    *,
+    path: str,
+    org_id: str = DEFAULT_ORG_ID,
+) -> dict | None:
+    result = await db.execute(
+        select(MemoryAsset).where(MemoryAsset.org_id == org_id, MemoryAsset.path == path)
+    )
+    asset = result.scalar_one_or_none()
+    if asset is None:
+        return None
+    return _asset_to_dict(asset)
+
+
+async def list_assets(
+    db: AsyncSession,
+    *,
+    path_prefix: str | None = None,
+    org_id: str = DEFAULT_ORG_ID,
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    q = select(MemoryAsset).where(MemoryAsset.org_id == org_id)
+    count_q = select(func.count()).select_from(MemoryAsset).where(MemoryAsset.org_id == org_id)
+
+    if path_prefix:
+        q = q.where(MemoryAsset.path.startswith(path_prefix))
+        count_q = count_q.where(MemoryAsset.path.startswith(path_prefix))
+
+    # Total count
+    total_result = await db.execute(count_q)
+    total = total_result.scalar() or 0
+
+    # Pagination
+    offset = (page - 1) * page_size
+    q = q.order_by(MemoryAsset.path).offset(offset).limit(page_size)
+
+    result = await db.execute(q)
+    assets = result.scalars().all()
+
+    items = [_asset_to_summary(a) for a in assets]
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def delete_asset(
+    db: AsyncSession,
+    *,
+    path: str,
+    org_id: str = DEFAULT_ORG_ID,
+) -> bool:
+    result = await db.execute(
+        delete(MemoryAsset).where(MemoryAsset.org_id == org_id, MemoryAsset.path == path)
+    )
+    await db.flush()
+    return result.rowcount > 0
+
+
+# ------------------------------------------------------------------
+# Seed sample data
+# ------------------------------------------------------------------
+
+async def seed_default_data(db: AsyncSession) -> None:
+    """Create sample memory assets if they don't exist."""
+    sample_assets = [
+        ("system/prompt.txt", "You are a helpful assistant.", "text/plain"),
+        ("system/config.json", '{"model": "gpt-4"}', "application/json"),
+        ("workspace/notes.md", "# Notes\n\nSome notes here.", "text/markdown"),
+    ]
+    for path, content, content_type in sample_assets:
+        await create_asset(
+            db, path=path, content=content, content_type=content_type, org_id=DEFAULT_ORG_ID,
+        )
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+def _asset_to_dict(asset: MemoryAsset) -> dict:
+    content = asset.metadata_.get("content", "") if isinstance(asset.metadata_, dict) else ""
+    return {
+        "id": asset.id,
+        "path": asset.path,
+        "content": content,
+        "content_type": asset.content_type,
+        "size_bytes": asset.size_bytes,
+        "created_at": asset.created_at.isoformat() if asset.created_at else None,
+        "updated_at": asset.updated_at.isoformat() if asset.updated_at else None,
+    }
+
+
+def _asset_to_summary(asset: MemoryAsset) -> dict:
+    name = asset.path.rsplit("/", 1)[-1] if "/" in asset.path else asset.path
+    return {
+        "path": asset.path,
+        "name": name,
+        "type": "file",
+        "size": asset.size_bytes,
+        "content_type": asset.content_type,
+        "updated_at": asset.updated_at.isoformat() if asset.updated_at else None,
+    }

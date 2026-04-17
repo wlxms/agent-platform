@@ -1,19 +1,25 @@
 ﻿"""Billing API v1 endpoints: usage summary and records."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentp_shared.db import get_db
 from agentp_shared.responses import data_response, list_response
 
 from ... import service
 
 router = APIRouter(prefix="/internal/billing/usage", tags=["billing"])
 
+DEFAULT_ORG_ID = "org-root"
+
 
 @router.get("/summary")
-async def summary(period: str = Query(default="month")):
-    svc = service.get_billing_service()
-    result = svc.get_summary(period=period)
+async def summary(
+    period: str = Query(default="month"),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await service.get_summary(db, org_id=DEFAULT_ORG_ID, period=period)
     return data_response(result)
 
 
@@ -25,9 +31,11 @@ async def records(
     model: str | None = Query(default=None),
     start_date: str | None = Query(default=None),
     end_date: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
 ):
-    svc = service.get_billing_service()
-    result = svc.list_records(
+    result = await service.list_records(
+        db,
+        org_id=DEFAULT_ORG_ID,
         instance_id=instance_id,
         model=model,
         start_date=start_date,

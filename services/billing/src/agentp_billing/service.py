@@ -1,147 +1,229 @@
-"""Billing service layer: in-memory usage records, cost calculation, summary aggregation."""
+"""Billing service layer: usage records stored in PostgreSQL, cost calculation, summary aggregation."""
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from agentp_shared.models import UsageRecord, AgentInstance, User, Organization
+
+
+class BillingError(Exception):
+    """Business-level error for billing operations."""
+    def __init__(self, code: str, message: str, status_code: int = 400):
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+        super().__init__(message)
 
 
 def _calc_cost(input_tokens: int, output_tokens: int) -> float:
     return round(input_tokens * 0.00001 + output_tokens * 0.00003, 6)
 
 
-SEED_RECORDS = [
-    {
-        "id": "rec-001",
-        "time": "2026-04-15T10:30:00Z",
-        "instance_name": "inst-001",
-        "model": "gpt-4",
-        "input_tokens": 1200,
-        "output_tokens": 800,
-    },
-    {
-        "id": "rec-002",
-        "time": "2026-04-14T14:00:00Z",
-        "instance_name": "inst-002",
-        "model": "gpt-3.5-turbo",
-        "input_tokens": 500,
-        "output_tokens": 300,
-    },
-    {
-        "id": "rec-003",
-        "time": "2026-04-13T09:15:00Z",
-        "instance_name": "inst-001",
-        "model": "gpt-4",
-        "input_tokens": 2000,
-        "output_tokens": 1500,
-    },
-    {
-        "id": "rec-004",
-        "time": "2026-04-12T11:45:00Z",
-        "instance_name": "inst-001",
-        "model": "claude-3",
-        "input_tokens": 800,
-        "output_tokens": 600,
-    },
-    {
-        "id": "rec-005",
-        "time": "2026-04-11T16:20:00Z",
-        "instance_name": "inst-002",
-        "model": "gpt-3.5-turbo",
-        "input_tokens": 300,
-        "output_tokens": 200,
-    },
-]
+# ---- CRUD ----
+
+async def create_usage_record(
+    db: AsyncSession,
+    *,
+    instance_id: str,
+    org_id: str,
+    user_id: str,
+    model: str = "",
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+) -> dict:
+    """Insert a usage record and return it as a dict."""
+    total_tokens = input_tokens + output_tokens
+    cost = _calc_cost(input_tokens, output_tokens)
+    rec = UsageRecord(
+        instance_id=instance_id,
+        org_id=org_id,
+        user_id=user_id,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        cost=cost,
+    )
+    db.add(rec)
+    await db.flush()
+    return _record_to_dict(rec)
 
 
-class BillingService:
-    def __init__(self, records: list[dict] | None = None):
-        self._records = [self._enrich(r) for r in (records or [])]
+async def get_summary(
+    db: AsyncSession,
+    *,
+    org_id: str,
+    period: str = "month",
+) -> dict:
+    """Aggregate usage summary for an org."""
+    now = datetime.now(timezone.utc)
+    if period == "month":
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        start = now - timedelta(days=30)
 
-    @staticmethod
-    def _enrich(rec: dict) -> dict:
-        return {
-            **rec,
-            "cost": _calc_cost(rec["input_tokens"], rec["output_tokens"]),
-        }
+    # Base filter: org + time range
+    base = (
+        select(UsageRecord)
+        .where(UsageRecord.org_id == org_id, UsageRecord.timestamp >= start)
+    )
 
-    def get_summary(self, period: str = "month") -> dict:
-        now = datetime.now(timezone.utc)
-        if period == "month":
-            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        else:
-            start = now - timedelta(days=30)
+    # Total tokens + cost
+    agg = (
+        select(
+            func.coalesce(func.sum(UsageRecord.input_tokens + UsageRecord.output_tokens), 0),
+            func.coalesce(func.sum(UsageRecord.cost), 0),
+        )
+        .where(UsageRecord.org_id == org_id, UsageRecord.timestamp >= start)
+    )
+    row = (await db.execute(agg)).one()
+    total_tokens = int(row[0])
+    total_cost = round(float(row[1]), 6)
 
-        filtered = [
-            r for r in self._records
-            if datetime.fromisoformat(r["time"].replace("Z", "+00:00")) >= start
-        ]
+    # By model
+    by_model_q = (
+        select(
+            UsageRecord.model,
+            func.sum(UsageRecord.input_tokens + UsageRecord.output_tokens),
+            func.sum(UsageRecord.cost),
+        )
+        .where(UsageRecord.org_id == org_id, UsageRecord.timestamp >= start)
+        .group_by(UsageRecord.model)
+    )
+    by_model = [
+        {"model": r[0], "tokens": int(r[1]), "cost": round(float(r[2]), 6)}
+        for r in (await db.execute(by_model_q)).all()
+    ]
 
-        total_tokens = sum(r["input_tokens"] + r["output_tokens"] for r in filtered)
-        total_cost = round(sum(r["cost"] for r in filtered), 6)
+    # Daily trend
+    daily_q = (
+        select(
+            func.date(UsageRecord.timestamp),
+            func.sum(UsageRecord.input_tokens + UsageRecord.output_tokens),
+            func.sum(UsageRecord.cost),
+        )
+        .where(UsageRecord.org_id == org_id, UsageRecord.timestamp >= start)
+        .group_by(func.date(UsageRecord.timestamp))
+        .order_by(func.date(UsageRecord.timestamp))
+    )
+    daily_trend = [
+        {"date": str(r[0]), "tokens": int(r[1]), "cost": round(float(r[2]), 6)}
+        for r in (await db.execute(daily_q)).all()
+    ]
 
-        by_model_dict: dict[str, dict] = defaultdict(lambda: {"tokens": 0, "cost": 0.0})
-        for r in filtered:
-            key = r["model"]
-            by_model_dict[key]["tokens"] += r["input_tokens"] + r["output_tokens"]
-            by_model_dict[key]["cost"] = round(by_model_dict[key]["cost"] + r["cost"], 6)
-        by_model = [{"model": m, "tokens": v["tokens"], "cost": v["cost"]} for m, v in by_model_dict.items()]
-
-        daily_dict: dict[str, dict] = defaultdict(lambda: {"tokens": 0, "cost": 0.0})
-        for r in filtered:
-            day = r["time"][:10]
-            daily_dict[day]["tokens"] += r["input_tokens"] + r["output_tokens"]
-            daily_dict[day]["cost"] = round(daily_dict[day]["cost"] + r["cost"], 6)
-        daily_trend = [{"date": d, "tokens": v["tokens"], "cost": v["cost"]} for d, v in sorted(daily_dict.items())]
-
-        return {
-            "total_tokens": total_tokens,
-            "total_cost": total_cost,
-            "by_model": by_model,
-            "daily_trend": daily_trend,
-        }
-
-    def list_records(
-        self,
-        instance_id: str | None = None,
-        model: str | None = None,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        page: int = 1,
-        page_size: int = 20,
-    ) -> dict:
-        filtered = list(self._records)
-
-        if instance_id is not None:
-            filtered = [r for r in filtered if r["instance_name"] == instance_id]
-        if model is not None:
-            filtered = [r for r in filtered if r["model"] == model]
-        if start_date is not None:
-            filtered = [r for r in filtered if r["time"][:10] >= start_date]
-        if end_date is not None:
-            filtered = [r for r in filtered if r["time"][:10] <= end_date]
-
-        total = len(filtered)
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-        page_items = filtered[start_idx:end_idx]
-
-        return {
-            "items": page_items,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-        }
+    return {
+        "total_tokens": total_tokens,
+        "total_cost": total_cost,
+        "by_model": by_model,
+        "daily_trend": daily_trend,
+    }
 
 
-_service: BillingService | None = None
+async def list_records(
+    db: AsyncSession,
+    *,
+    org_id: str,
+    instance_id: str | None = None,
+    model: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """List usage records with filtering and pagination."""
+    query = select(UsageRecord).where(UsageRecord.org_id == org_id)
+
+    if instance_id is not None:
+        query = query.where(UsageRecord.instance_id == instance_id)
+    if model is not None:
+        query = query.where(UsageRecord.model == model)
+    if start_date is not None:
+        query = query.where(func.date(UsageRecord.timestamp) >= start_date)
+    if end_date is not None:
+        query = query.where(func.date(UsageRecord.timestamp) <= end_date)
+
+    # Count
+    count_q = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+
+    # Paginate
+    query = query.order_by(UsageRecord.timestamp.desc()).offset((page - 1) * page_size).limit(page_size)
+    rows = (await db.execute(query)).scalars().all()
+
+    return {
+        "items": [_record_to_dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
-def init_billing(records: list[dict] | None = None):
-    global _service
-    _service = BillingService(records or SEED_RECORDS)
+async def seed_default_data(db: AsyncSession) -> None:
+    """Seed demo usage records if none exist for org-root."""
+    from sqlalchemy import select as sa_select
+
+    count_q = sa_select(func.count()).select_from(
+        sa_select(UsageRecord).where(UsageRecord.org_id == "org-root").subquery()
+    )
+    existing = (await db.execute(count_q)).scalar() or 0
+    if existing > 0:
+        return
+
+    # Ensure seed org, user, and agent instances exist
+    for org_id, org_name in [("org-root", "Root Organization")]:
+        r = await db.execute(sa_select(Organization).where(Organization.id == org_id))
+        if r.scalar_one_or_none() is None:
+            db.add(Organization(id=org_id, name=org_name))
+
+    for uid, uname in [("user-admin", "admin"), ("user-billing-seed", "billing-seed")]:
+        r = await db.execute(sa_select(User).where(User.id == uid))
+        if r.scalar_one_or_none() is None:
+            db.add(User(id=uid, org_id="org-root", username=uname, email=f"{uname}@localhost", role="admin"))
+
+    for iid, iname in [("inst-001", "seed-agent-1"), ("inst-002", "seed-agent-2")]:
+        r = await db.execute(sa_select(AgentInstance).where(AgentInstance.id == iid))
+        if r.scalar_one_or_none() is None:
+            db.add(AgentInstance(
+                id=iid, org_id="org-root", user_id="user-billing-seed",
+                name=iname, status="running",
+            ))
+
+    await db.flush()
+
+    seed_records = [
+        ("inst-001", "gpt-4", 1200, 800, "2026-04-15T10:30:00Z"),
+        ("inst-002", "gpt-3.5-turbo", 500, 300, "2026-04-14T14:00:00Z"),
+        ("inst-001", "gpt-4", 2000, 1500, "2026-04-13T09:15:00Z"),
+        ("inst-001", "claude-3", 800, 600, "2026-04-12T11:45:00Z"),
+        ("inst-002", "gpt-3.5-turbo", 300, 200, "2026-04-11T16:20:00Z"),
+    ]
+    for instance_id, model, inp, outp, ts_str in seed_records:
+        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        rec = UsageRecord(
+            instance_id=instance_id,
+            org_id="org-root",
+            user_id="user-billing-seed",
+            model=model,
+            input_tokens=inp,
+            output_tokens=outp,
+            total_tokens=inp + outp,
+            cost=_calc_cost(inp, outp),
+            timestamp=ts,
+        )
+        db.add(rec)
+    await db.flush()
 
 
-def get_billing_service() -> BillingService:
-    if _service is None:
-        init_billing()
-    return _service
+def _record_to_dict(rec: UsageRecord) -> dict:
+    return {
+        "id": rec.id,
+        "time": rec.timestamp.isoformat() if rec.timestamp else None,
+        "instance_name": rec.instance_id,
+        "model": rec.model,
+        "input_tokens": rec.input_tokens,
+        "output_tokens": rec.output_tokens,
+        "cost": float(rec.cost) if rec.cost else 0.0,
+    }

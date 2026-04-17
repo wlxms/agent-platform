@@ -29,6 +29,19 @@ async def db():
     async with _test_session_factory() as session:
         await service.seed_default_data(session)
         yield session
+        # Cleanup: delete non-seed users from org-root (keep admin + demo)
+        # Roll back first in case previous test left session in bad state
+        await session.rollback()
+        from sqlalchemy import delete
+        from agentp_shared.models import User
+        seed_ids = {"user-admin", "user-demo"}
+        await session.execute(
+            delete(User).where(
+                User.org_id == "org-root",
+                User.id.notin_(seed_ids),
+            )
+        )
+        await session.commit()
 
 
 @pytest.fixture
@@ -273,3 +286,77 @@ class TestSchemaValidation:
         assert "role" in user_info
         assert "org_id" in user_info
         assert "permissions" in user_info
+
+
+# ---- Boundary & Edge Cases ----
+
+class TestBoundaryCases:
+
+    async def test_login_with_whitespace_key(self, db):
+        """Whitespace-only key should fail."""
+        with pytest.raises(service.AuthError) as exc_info:
+            await service.login("   ", db)
+        assert exc_info.value.code == "UNAUTHORIZED"
+
+    async def test_login_with_very_long_key(self, db):
+        """Absurdly long key should fail gracefully, not cause DB errors."""
+        long_key = "oh-" + "a" * 2000
+        with pytest.raises(service.AuthError):
+            await service.login(long_key, db)
+
+    async def test_refresh_with_empty_string(self, db):
+        """Empty string as refresh token should raise UNAUTHORIZED."""
+        with pytest.raises(service.AuthError) as exc_info:
+            await service.refresh("", db)
+        assert exc_info.value.code == "UNAUTHORIZED"
+
+    async def test_revoke_key_from_wrong_org(self, db, admin_key):
+        """Revoking a key from a different org should fail."""
+        # Create a key in org-root
+        created = await service.create_api_key(db, org_id="org-root", user_id="user-admin", name="Cross-Org Test")
+        # Try to revoke from org-demo (wrong org)
+        with pytest.raises(service.AuthError) as exc_info:
+            await service.revoke_api_key(db, org_id="org-demo", key_id=created["id"])
+        assert exc_info.value.code == "NOT_FOUND"
+
+    async def test_create_org_with_empty_name(self, db):
+        """Empty org name should raise AuthError."""
+        with pytest.raises(service.AuthError):
+            await service.create_organization(db, name="", parent_id="org-root")
+
+    async def test_create_api_key_with_zero_expiry(self, db):
+        """Zero expiry days should be rejected."""
+        with pytest.raises(service.AuthError):
+            await service.create_api_key(db, org_id="org-root", user_id="user-admin", name="Zero Expiry", expires_in_days=0)
+
+    async def test_double_logout_idempotent(self, db, admin_key):
+        """Logging out twice with the same token should not error."""
+        login_result = await service.login(admin_key, db)
+        await service.logout(refresh_token_str=login_result["refresh_token"])
+        await service.logout(refresh_token_str=login_result["refresh_token"])  # second call
+
+    async def test_authenticate_after_revoke_then_new_login(self, db, admin_key):
+        """After revoking a key and re-logging in, the new token should work."""
+        result1 = await service.login(admin_key, db)
+        # Old token should be blacklisted
+        payload = decode_token(result1["token"])
+        await service.logout(access_token_jti=payload["jti"])
+        assert await service.is_token_blacklisted(payload["jti"])
+        # New login should give a working token
+        result2 = await service.login(admin_key, db)
+        payload2 = decode_token(result2["token"])
+        assert not await service.is_token_blacklisted(payload2["jti"])
+
+    async def test_create_user_duplicate_username(self, db):
+        """Duplicate username should raise IntegrityError or AuthError."""
+        import uuid
+        uname = f"dup-{uuid.uuid4().hex[:8]}"
+        await service.create_user(db, org_id="org-root", username=uname, email=f"{uname}@localhost", role="member")
+        with pytest.raises(Exception):  # IntegrityError from DB
+            await service.create_user(db, org_id="org-root", username=uname, email=f"{uname}2@localhost", role="member")
+
+    async def test_list_org_members_pagination(self, db):
+        """Pagination params should be respected."""
+        result = await service.list_org_members(db, org_id="org-root", page=1, page_size=1)
+        assert len(result["items"]) <= 1
+        assert result["page"] == 1

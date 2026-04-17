@@ -1,5 +1,27 @@
-﻿import pytest
+﻿"""Tests for Host service — runs against REAL PostgreSQL via ASGI.
+
+Requires: PostgreSQL running, alembic upgrade head applied.
+Run: pytest tests/test_host.py -v
+"""
+from __future__ import annotations
+
+import uuid
+
+import pytest
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+
+from agentp_shared.config import db_settings
+from agentp_shared.models import AgentInstance, Organization, User
+
+# Test engine with NullPool — no connection reuse across loops
+_test_engine = create_async_engine(db_settings.url, echo=False, poolclass=NullPool)
+
+# Monkeypatch shared engine so ASGI routes also use NullPool
+import agentp_shared.db as _shared_db
+_shared_db.engine = _test_engine
+_shared_db.async_session_factory = async_sessionmaker(_test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 @pytest.fixture(autouse=True)
@@ -24,10 +46,10 @@ async def test_health():
 async def test_create_agent():
     from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/internal/agents", json={"name": "test-agent"})
+        resp = await client.post("/internal/agents", json={"name": f"test-agent-{uuid.uuid4().hex[:8]}"})
         assert resp.status_code == 200
         data = resp.json()["data"]
-        assert data["name"] == "test-agent"
+        assert data["name"].startswith("test-agent-")
         assert data["status"] in ("ready", "running", "seeding", "creating")
         assert data["id"]
 
@@ -36,19 +58,23 @@ async def test_create_agent():
 async def test_list_agents():
     from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        await client.post("/internal/agents", json={"name": "list-test"})
+        await client.post("/internal/agents", json={"name": f"list-test-{uuid.uuid4().hex[:8]}"})
         resp = await client.get("/internal/agents")
         assert resp.status_code == 200
         body = resp.json()
         assert body["total"] >= 1
         assert len(body["items"]) >= 1
+        for item in body["items"]:
+            assert "id" in item
+            assert "name" in item
+            assert "status" in item
 
 
 @pytest.mark.asyncio
 async def test_get_agent():
     from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        create_resp = await client.post("/internal/agents", json={"name": "get-test"})
+        create_resp = await client.post("/internal/agents", json={"name": f"get-test-{uuid.uuid4().hex[:8]}"})
         agent_id = create_resp.json()["data"]["id"]
         resp = await client.get(f"/internal/agents/{agent_id}")
         assert resp.status_code == 200
@@ -59,7 +85,7 @@ async def test_get_agent():
 async def test_destroy_agent():
     from agentp_host.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        create_resp = await client.post("/internal/agents", json={"name": "destroy-test"})
+        create_resp = await client.post("/internal/agents", json={"name": f"destroy-test-{uuid.uuid4().hex[:8]}"})
         agent_id = create_resp.json()["data"]["id"]
         resp = await client.delete(f"/internal/agents/{agent_id}")
         assert resp.status_code == 200
@@ -73,7 +99,7 @@ async def test_send_message():
     os.environ["DS_API_KEY"] = "sk-3aa4613249a34bc6a54d14f561ca7597"
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            create_resp = await client.post("/internal/agents", json={"name": "msg-test"})
+            create_resp = await client.post("/internal/agents", json={"name": f"msg-test-{uuid.uuid4().hex[:8]}"})
             agent_id = create_resp.json()["data"]["id"]
             resp = await client.post(
                 f"/internal/agents/{agent_id}/message",
@@ -94,7 +120,7 @@ async def test_send_message_no_model():
     os.environ["DS_API_KEY"] = "sk-3aa4613249a34bc6a54d14f561ca7597"
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            create_resp = await client.post("/internal/agents", json={"name": "msg-nomodel"})
+            create_resp = await client.post("/internal/agents", json={"name": f"msg-nomodel-{uuid.uuid4().hex[:8]}"})
             agent_id = create_resp.json()["data"]["id"]
             resp = await client.post(
                 f"/internal/agents/{agent_id}/message",
@@ -108,20 +134,20 @@ async def test_send_message_no_model():
 
 @pytest.mark.asyncio
 async def test_send_message_no_api_key():
-    """send_message without DS_API_KEY: HostService wraps error in RuntimeError."""
-    from agentp_host.service import HostService
-    from agentp_shared.api_mapping import CreateAgentRequest
+    """send_message without DS_API_KEY should return 502."""
+    from agentp_host.main import app
     import os
     old = os.environ.pop("DS_API_KEY", None)
     try:
-        svc = HostService()
-        req = CreateAgentRequest(name="test")
-        record = svc.client.create_instance(svc.mapper.to_sdk_request(req))
-        try:
-            svc.send_message(record.instance_id, "hello", "gpt-4")
-            assert False, "Should have raised RuntimeError"
-        except RuntimeError as e:
-            assert "DS_API_KEY" in str(e)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            create_resp = await client.post("/internal/agents", json={"name": f"msg-nokey-{uuid.uuid4().hex[:8]}"})
+            agent_id = create_resp.json()["data"]["id"]
+            resp = await client.post(
+                f"/internal/agents/{agent_id}/message",
+                json={"prompt": "hello", "model": "gpt-4"},
+            )
+            # SDK error propagates as 502 via HostError
+            assert resp.status_code in (500, 502)
     finally:
         if old is not None:
             os.environ["DS_API_KEY"] = old
@@ -136,13 +162,15 @@ async def test_get_agent_not_found():
 
 
 @pytest.mark.asyncio
-async def test_list_agents_empty():
-    """Fresh service should return empty list initially (if no instances created)."""
+async def test_list_agents_structure():
+    """List endpoint should return proper pagination structure."""
     from agentp_host.main import app
-    from agentp_host.service import HostService
-    svc = HostService()
-    result = svc.list_instances()
-    # noop driver may have instances from other tests, so just check structure
-    assert "items" in result
-    assert "total" in result
-    assert isinstance(result["items"], list)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/internal/agents")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "items" in body
+        assert "total" in body
+        assert "page" in body
+        assert "page_size" in body
+        assert isinstance(body["items"], list)

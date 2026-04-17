@@ -5,7 +5,13 @@
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$VenvActivate = Join-Path $ProjectRoot ".venv\Scripts\Activate.ps1"
+$VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+
+if (-not (Test-Path $VenvPython)) {
+    Write-Host "ERROR: Virtual environment not found at $VenvPython" -ForegroundColor Red
+    Write-Host "Run install.ps1 first." -ForegroundColor Yellow
+    exit 1
+}
 
 $services = @(
     @{ Name = "gateway";   Port = 8000; Module = "agentp_gateway" }
@@ -61,9 +67,23 @@ $processes = @()
 # Set DS_API_KEY for Host service (required by SDK send_message)
 $env:DS_API_KEY = "sk-3aa4613249a34bc6a54d14f561ca7597"
 
+# Build PYTHONPATH with all service src dirs + agent-orchestrator
+$pythonPaths = @(
+    (Join-Path $ProjectRoot "services\shared\src"),
+    (Join-Path $ProjectRoot "services\gateway\src"),
+    (Join-Path $ProjectRoot "services\auth\src"),
+    (Join-Path $ProjectRoot "services\host\src"),
+    (Join-Path $ProjectRoot "services\scheduler\src"),
+    (Join-Path $ProjectRoot "services\memory\src"),
+    (Join-Path $ProjectRoot "services\market\src"),
+    (Join-Path $ProjectRoot "services\billing\src"),
+    (Join-Path $ProjectRoot "agent-orchestrator\src")
+)
+$env:PYTHONPATH = ($pythonPaths -join [System.IO.Path]::PathSeparator)
+
 foreach ($svc in $services) {
     Write-Host "  Starting $($svc.Name) (:$($svc.Port))..." -ForegroundColor Gray
-    $proc = Start-Process -FilePath "python" -ArgumentList "-m", $svc.Module `
+    $proc = Start-Process -FilePath $VenvPython -ArgumentList "-m", $svc.Module `
         -WorkingDirectory $ProjectRoot `
         -WindowStyle Minimized `
         -PassThru
