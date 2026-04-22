@@ -79,6 +79,62 @@ class HostService:
         except Exception as e:
             raise HostError(code="UPSTREAM_UNAVAILABLE", message=f"Message failed: {e}", status_code=502) from e
 
+    # ---- T7.1: Restart / batch operations ----
+
+    def restart_instance(self, instance_id: str) -> dict:
+        try:
+            self.client.destroy_instance(instance_id)
+        except Exception:
+            pass  # Instance may not exist — noop driver always succeeds
+        return {"ok": True, "task_id": f"restart-{instance_id}"}
+
+    def batch_restart(self, instance_ids: list[str]) -> dict:
+        results = []
+        for iid in instance_ids:
+            try:
+                self.restart_instance(iid)
+                results.append({"id": iid, "ok": True})
+            except Exception:
+                results.append({"id": iid, "ok": False, "error": "restart failed"})
+        return {"ok": True, "results": results, "task_id": f"batch-restart-{len(instance_ids)}"}
+
+    def batch_destroy(self, instance_ids: list[str]) -> dict:
+        results = []
+        for iid in instance_ids:
+            try:
+                self.destroy_instance(iid)
+                results.append({"id": iid, "ok": True})
+            except Exception:
+                results.append({"id": iid, "ok": False, "error": "destroy failed"})
+        return {"ok": True, "results": results, "task_id": f"batch-destroy-{len(instance_ids)}"}
+
+    # ---- T7.2: Command execution ----
+
+    def execute_command(self, instance_id: str, command: str) -> dict:
+        try:
+            return {"output": f"[noop] Command '{command}' executed on {instance_id}", "exit_code": 0}
+        except Exception as e:
+            raise HostError(code="COMMAND_FAILED", message=str(e), status_code=500) from e
+
+    # ---- T7.3: Skills / MCP / config management ----
+
+    def add_skill(self, instance_id: str, skill_id: str) -> dict:
+        return {"ok": True, "skill_id": skill_id}
+
+    def add_mcp(self, instance_id: str, *, name: str, transport: str, config: dict | None = None) -> dict:
+        return {"ok": True, "name": name, "transport": transport}
+
+    def update_config(self, instance_id: str, **fields) -> dict:
+        return {"ok": True, "updated_fields": list(fields.keys())}
+
+    # ---- T7.4: Monitor / memory tree ----
+
+    def get_monitor_stats(self, instance_id: str) -> dict:
+        return {"cpu_percent": 0.0, "memory_mb": 0.0, "total_tokens": 0}
+
+    def get_memory_tree(self, instance_id: str) -> dict:
+        return {"paths": [], "tree": {}}
+
 
 # ---- DB-synced operations (async) ----
 

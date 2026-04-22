@@ -161,3 +161,42 @@ async def close_event_bus() -> None:
     if _bus is not None:
         await _bus.close()
         _bus = None
+
+
+# ---------------------------------------------------------------------------
+# FastAPI app.state helpers (preferred by M8)
+# ---------------------------------------------------------------------------
+
+async def init_app_event_bus(app, service_name: str, start_consumer: bool = False) -> EventBus:
+    """Initialize EventBus via app.state (async, uses shared get_redis)."""
+    from agentp_shared.redis import get_redis
+    try:
+        redis = await get_redis()
+        bus = EventBus(redis=redis, service_name=service_name)
+        app.state.event_bus = bus
+        logger.info("EventBus initialized for service=%s", service_name)
+
+        if start_consumer:
+            app.state.event_bus_task = asyncio.get_running_loop().create_task(bus.consume())
+
+        return bus
+    except Exception:
+        logger.warning("Failed to initialize EventBus for service=%s, continuing without it", service_name, exc_info=True)
+        app.state.event_bus = None
+        return None  # type: ignore[return-value]
+
+
+async def shutdown_app_event_bus(app) -> None:
+    """Stop consumer loop and close on shutdown."""
+    bus = getattr(app.state, "event_bus", None)
+    task = getattr(app.state, "event_bus_task", None)
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        app.state.event_bus_task = None
+    if bus is not None:
+        await bus.close()
+        app.state.event_bus = None

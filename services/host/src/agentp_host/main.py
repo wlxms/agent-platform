@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from .api.v1.agents import router as agents_router
 from .config import Settings
+from agentp_shared.event_bus import init_app_event_bus, shutdown_app_event_bus
 
 # Ensure DS_API_KEY is set for SDK send_message (skeleton uses dummy)
 if not os.environ.get("DS_API_KEY"):
@@ -15,7 +16,9 @@ settings = Settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_app_event_bus(app, "host")
     yield
+    await shutdown_app_event_bus(app)
 
 
 app = FastAPI(title="OH Enterprise - Host Service", version="0.2.0", lifespan=lifespan)

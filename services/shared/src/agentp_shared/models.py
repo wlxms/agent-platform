@@ -20,6 +20,15 @@ __all__ = [
     "MemoryAsset",
     "BillingRule",
     "TaskRecord",
+    "AgentConfig",
+    "AgentConfigVersion",
+    "Approval",
+    "Budget",
+    "AuditLog",
+    "Template",
+    "Skill",
+    "McpServer",
+    "Category",
 ]
 
 _utcnow = lambda: datetime.now(timezone.utc)
@@ -330,3 +339,217 @@ class TaskRecord(Base):
 
     def __repr__(self) -> str:
         return f"<TaskRecord id={self.id!r} type={self.type!r}>"
+
+
+class AgentConfig(Base):
+    __tablename__ = "agent_configs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    author_id: Mapped[str] = mapped_column(String, nullable=False)
+    org_id: Mapped[str] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[str] = mapped_column(String(20), default="1.0.0")
+    visibility: Mapped[str] = mapped_column(String(20), default="private")
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+
+    # 11 JSONB dimension fields per api-protocol 4.3.1
+    model: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    litellm_params: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    prompt_template: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    tools: Mapped[list] = mapped_column(sa.JSON, default=list, server_default="[]")
+    skills: Mapped[list] = mapped_column(sa.JSON, default=list, server_default="[]")
+    mcp_servers: Mapped[list] = mapped_column(sa.JSON, default=list, server_default="[]")
+    knowledge: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    memory: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    appearance: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    safety: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    runtime: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+
+    tags: Mapped[list] = mapped_column(sa.JSON, default=list, server_default="[]")
+    metadata_: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        Index("ix_agent_configs_org_id", "org_id"),
+        Index("ix_agent_configs_author_id", "author_id"),
+        Index("ix_agent_configs_visibility", "visibility"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentConfig id={self.id!r} name={self.name!r}>"
+
+
+class AgentConfigVersion(Base):
+    __tablename__ = "agent_config_versions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    agent_config_id: Mapped[str] = mapped_column(
+        String, ForeignKey("agent_configs.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[str] = mapped_column(String(20), nullable=False)
+    config_snapshot: Mapped[dict] = mapped_column(sa.JSON, nullable=False)
+    changelog: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_agent_config_versions_agent_config_id", "agent_config_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentConfigVersion id={self.id!r} version={self.version!r}>"
+
+
+class Approval(Base):
+    __tablename__ = "approvals"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    applicant_id: Mapped[str] = mapped_column(String, nullable=False)
+    reviewer_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    template_name: Mapped[str] = mapped_column(String(100), default="")
+    template_version: Mapped[str] = mapped_column(String(20), default="")
+    config_snapshot: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    review_comment: Mapped[str] = mapped_column(String(1000), default="")
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_approvals_org_id", "org_id"),
+        Index("ix_approvals_status", "status"),
+        Index("ix_approvals_applicant_id", "applicant_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Approval id={self.id!r} status={self.status!r}>"
+
+
+class Budget(Base):
+    __tablename__ = "budgets"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    threshold: Mapped[float] = mapped_column(sa.Numeric(12, 2), default=0)
+    alert_rules: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", name="uq_budgets_org_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Budget id={self.id!r} org_id={self.org_id!r}>"
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[str] = mapped_column(String, nullable=False)
+    user_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(50), default="")
+    resource_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    path: Mapped[str] = mapped_column(String(500), default="")
+    request_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    status_code: Mapped[Optional[int]] = mapped_column(sa.Integer, nullable=True)
+    request_body: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    response_body: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_audit_logs_org_id", "org_id"),
+        Index("ix_audit_logs_timestamp", "timestamp"),
+        Index("ix_audit_logs_path", "path"),
+        Index("ix_audit_logs_request_id", "request_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AuditLog id={self.id!r} action={self.action!r}>"
+
+
+class Template(Base):
+    __tablename__ = "templates"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), default="")
+    category: Mapped[str] = mapped_column(String(50), default="general")
+    visibility: Mapped[str] = mapped_column(String(20), default="private")
+    author_id: Mapped[str] = mapped_column(String, nullable=False)
+    config_snapshot: Mapped[dict] = mapped_column(sa.JSON, nullable=False)
+    tags: Mapped[list] = mapped_column(sa.JSON, default=list, server_default="[]")
+    version: Mapped[str] = mapped_column(String(20), default="1.0.0")
+    usage_count: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        Index("ix_templates_org_id", "org_id"),
+        Index("ix_templates_category", "category"),
+        Index("ix_templates_visibility", "visibility"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Template id={self.id!r} name={self.name!r}>"
+
+
+class Skill(Base):
+    __tablename__ = "skills"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="")
+    author: Mapped[str] = mapped_column(String(100), default="")
+    version: Mapped[str] = mapped_column(String(20), default="1.0.0")
+    package_url: Mapped[str] = mapped_column(String(500), default="")
+    category: Mapped[str] = mapped_column(String(50), default="")
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<Skill id={self.id!r} name={self.name!r}>"
+
+
+class McpServer(Base):
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    transport: Mapped[str] = mapped_column(String(50), default="stdio")
+    description: Mapped[str] = mapped_column(String(500), default="")
+    config_template: Mapped[dict] = mapped_column(sa.JSON, default=dict, server_default="{}")
+    category: Mapped[str] = mapped_column(String(50), default="")
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_mcp_servers_transport", "transport"),
+        Index("ix_mcp_servers_category", "category"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<McpServer id={self.id!r} name={self.name!r}>"
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    icon: Mapped[str] = mapped_column(String(50), default="")
+    display_order: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<Category id={self.id!r} name={self.name!r}>"

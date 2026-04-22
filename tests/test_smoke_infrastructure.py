@@ -275,6 +275,10 @@ class TestRedisEventBusSmoke:
         """Test publishing an event and reading it back from Redis Streams."""
         r = aioredis.from_url(REDIS_URL, decode_responses=True)
         try:
+            stream_key = f"agentp:events:{Topic.AGENT_CREATED}"
+            # Clear stale events to ensure we read only our published event
+            await r.delete(stream_key)
+
             bus = EventBus(redis=r, service_name="smoke-test")
             event = Event(
                 topic=Topic.AGENT_CREATED,
@@ -284,7 +288,6 @@ class TestRedisEventBusSmoke:
             )
             await bus.publish(event)
 
-            stream_key = f"agentp:events:{Topic.AGENT_CREATED}"
             messages = await r.xrange(stream_key, count=1)
             assert len(messages) > 0
 

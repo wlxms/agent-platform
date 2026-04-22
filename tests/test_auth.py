@@ -32,9 +32,22 @@ async def db():
         # Cleanup: delete non-seed users from org-root (keep admin + demo)
         # Roll back first in case previous test left session in bad state
         await session.rollback()
-        from sqlalchemy import delete
-        from agentp_shared.models import User
-        seed_ids = {"user-admin", "user-demo"}
+        from sqlalchemy import delete, select
+        from agentp_shared.models import User, AgentInstance, UsageRecord
+        seed_ids = {"user-admin", "user-demo", "user-billing-seed"}
+
+        # Delete usage_records and agent_instances for non-seed users first
+        # (FK ON DELETE SET NULL would fail since user_id is NOT NULL)
+        non_seed = (
+            select(User.id)
+            .where(User.org_id == "org-root", User.id.notin_(seed_ids))
+        )
+        await session.execute(
+            delete(UsageRecord).where(UsageRecord.user_id.in_(non_seed))
+        )
+        await session.execute(
+            delete(AgentInstance).where(AgentInstance.user_id.in_(non_seed))
+        )
         await session.execute(
             delete(User).where(
                 User.org_id == "org-root",

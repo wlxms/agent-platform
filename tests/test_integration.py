@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 GATEWAY_URL = "http://localhost:8000"
-API_KEY = "oh-admin-key"
+API_KEY = "oh-admin-key-default"
 
 
 def services_available() -> bool:

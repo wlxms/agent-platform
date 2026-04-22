@@ -25,3 +25,11 @@ uv.lock
 logs/
 _check_db.py
 _list_tables.py
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Test sandbox
+_test_sandbox/
