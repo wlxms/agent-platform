@@ -91,6 +91,14 @@ foreach ($svc in $services) {
     Start-Sleep -Milliseconds 500
 }
 
+# Start Celery worker for async task processing (T5.4)
+Write-Host "  Starting celery worker..." -ForegroundColor Gray
+$celeryProc = Start-Process -FilePath $VenvPython -ArgumentList "-m", "celery", "-A", "agentp_scheduler.celery_app", "worker", "--loglevel=info", "-c", "agentp_scheduler.celery_app" `
+    -WorkingDirectory $ProjectRoot `
+    -WindowStyle Minimized `
+    -PassThru
+$processes += @{ Name = "celery-worker"; Port = 0; Process = $celeryProc }
+
 Write-Host ""
 Write-Host "Waiting for services to be ready..." -ForegroundColor Yellow
 $allReady = $true

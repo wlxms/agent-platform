@@ -9,7 +9,7 @@ from agentp_shared.security import decode_token
 from agentp_shared.schemas import PaginatedQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...schemas import LoginRequest, RefreshRequest, CreateOrgRequest, CreateApiKeyRequest
+from ...schemas import LoginRequest, RefreshRequest, CreateOrgRequest, CreateApiKeyRequest, AddMemberRequest, UpdateMemberRoleRequest, RenewApiKeyRequest
 from ... import service
 
 router = APIRouter(prefix="/internal/auth", tags=["auth"])
@@ -86,6 +86,19 @@ async def me(request: Request, db: AsyncSession = Depends(get_db)):
     return data_response(user_info)
 
 
+@router.get("/permissions")
+async def permissions():
+    from agentp_shared.security import ALL_PERMISSIONS
+    result = service.get_permissions()
+    return data_response({"items": result, "total": len(ALL_PERMISSIONS)})
+
+
+@router.get("/roles")
+async def roles():
+    result = service.get_roles()
+    return data_response({"items": result, "total": len(result)})
+
+
 # --- Organization management ---
 
 @router.get("/org/tree")
@@ -114,6 +127,54 @@ async def create_org(req: CreateOrgRequest, db: AsyncSession = Depends(get_db)):
 async def list_members(org_id: str, db: AsyncSession = Depends(get_db), page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=100), role: str | None = None):
     result = await service.list_org_members(db, org_id, page=page, page_size=page_size, role=role)
     return list_response(**result)
+
+
+@router.post("/org/{org_id}/members")
+async def add_member(org_id: str, req: AddMemberRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        from fastapi.responses import JSONResponse
+        body, status = _error_json(service.AuthError(code="UNAUTHORIZED", message="Missing or invalid Authorization header"))
+        return JSONResponse(content=body, status_code=status)
+    try:
+        result = await service.add_org_member(db, org_id=org_id, user_id=req.user_id, role=req.role)
+    except service.AuthError as exc:
+        from fastapi.responses import JSONResponse
+        body, status = _error_json(exc)
+        return JSONResponse(content=body, status_code=status)
+    return data_response(result)
+
+
+@router.delete("/org/{org_id}/members/{user_id}")
+async def remove_member(org_id: str, user_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        from fastapi.responses import JSONResponse
+        body, status = _error_json(service.AuthError(code="UNAUTHORIZED", message="Missing or invalid Authorization header"))
+        return JSONResponse(content=body, status_code=status)
+    try:
+        await service.remove_org_member(db, org_id=org_id, user_id=user_id)
+    except service.AuthError as exc:
+        from fastapi.responses import JSONResponse
+        body, status = _error_json(exc)
+        return JSONResponse(content=body, status_code=status)
+    return ok_response()
+
+
+@router.put("/org/{org_id}/members/{user_id}")
+async def update_member_role(org_id: str, user_id: str, req: UpdateMemberRoleRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        from fastapi.responses import JSONResponse
+        body, status = _error_json(service.AuthError(code="UNAUTHORIZED", message="Missing or invalid Authorization header"))
+        return JSONResponse(content=body, status_code=status)
+    try:
+        result = await service.update_member_role(db, org_id=org_id, user_id=user_id, role=req.role)
+    except service.AuthError as exc:
+        from fastapi.responses import JSONResponse
+        body, status = _error_json(exc)
+        return JSONResponse(content=body, status_code=status)
+    return data_response(result)
 
 
 # --- API Key management ---
@@ -184,3 +245,26 @@ async def revoke_api_key(key_id: str, request: Request, db: AsyncSession = Depen
         body_resp, status = _error_json(exc)
         return JSONResponse(content=body_resp, status_code=status)
     return ok_response()
+
+
+@router.post("/org/{org_id}/api-keys/{key_id}/renew")
+async def renew_api_key(org_id: str, key_id: str, req: RenewApiKeyRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    auth_header = request.headers.get("authorization", "")
+    org_id_from_token = ""
+    if auth_header.startswith("Bearer "):
+        try:
+            payload = decode_token(auth_header[7:])
+            org_id_from_token = payload.get("org_id", "")
+        except Exception:
+            pass
+    if not org_id_from_token:
+        from fastapi.responses import JSONResponse
+        body, status = _error_json(service.AuthError(code="UNAUTHORIZED", message="Cannot determine organization"))
+        return JSONResponse(content=body, status_code=status)
+    try:
+        result = await service.renew_api_key(db, org_id=org_id_from_token, key_id=key_id, expires_in_days=req.expires_in_days)
+    except service.AuthError as exc:
+        from fastapi.responses import JSONResponse
+        body, status = _error_json(exc)
+        return JSONResponse(content=body, status_code=status)
+    return data_response(result)

@@ -27,3 +27,16 @@ class CreateApiKeyRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     permissions: list[str] | None = None
     expires_in_days: int | None = Field(default=None, ge=1, le=365)
+
+
+class AddMemberRequest(BaseModel):
+    user_id: str
+    role: str = "member"
+
+
+class UpdateMemberRoleRequest(BaseModel):
+    role: str
+
+
+class RenewApiKeyRequest(BaseModel):
+    expires_in_days: int = Field(default=30, ge=1)

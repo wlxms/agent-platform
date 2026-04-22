@@ -1,12 +1,16 @@
 """Billing service layer: usage records stored in PostgreSQL, cost calculation, summary aggregation."""
 from __future__ import annotations
 
+import csv
+import io
+import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentp_shared.models import UsageRecord, AgentInstance, User, Organization
+from agentp_shared.models import Budget, BillingRule, UsageRecord, AgentInstance, User, Organization
 
 
 class BillingError(Exception):
@@ -33,6 +37,7 @@ async def create_usage_record(
     model: str = "",
     input_tokens: int = 0,
     output_tokens: int = 0,
+    event_bus=None,
 ) -> dict:
     """Insert a usage record and return it as a dict."""
     total_tokens = input_tokens + output_tokens
@@ -49,7 +54,22 @@ async def create_usage_record(
     )
     db.add(rec)
     await db.flush()
-    return _record_to_dict(rec)
+    result = _record_to_dict(rec)
+
+    # T8.2: publish agent.usage event
+    if event_bus is not None:
+        try:
+            from agentp_shared.event_bus import Event, Topic
+            await event_bus.publish(Event(
+                topic=Topic.AGENT_USAGE,
+                payload={"instance_id": instance_id, "tokens": total_tokens, "cost": cost},
+                source="billing",
+                request_id="",
+            ))
+        except Exception:
+            pass
+
+    return result
 
 
 async def get_summary(
@@ -226,4 +246,182 @@ def _record_to_dict(rec: UsageRecord) -> dict:
         "input_tokens": rec.input_tokens,
         "output_tokens": rec.output_tokens,
         "cost": float(rec.cost) if rec.cost else 0.0,
+    }
+
+
+# ---- Budget CRUD ----
+
+
+async def set_budget(db: AsyncSession, *, org_id: str, threshold: float, alert_rules: dict | None = None) -> dict:
+    result = await db.execute(select(Budget).where(Budget.org_id == org_id))
+    budget = result.scalar_one_or_none()
+    if budget is None:
+        budget = Budget(id=str(uuid.uuid4()), org_id=org_id, threshold=Decimal(str(threshold)), alert_rules=alert_rules or {})
+        db.add(budget)
+    else:
+        budget.threshold = Decimal(str(threshold))
+        if alert_rules is not None:
+            budget.alert_rules = alert_rules
+        budget.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    await db.refresh(budget)
+    return {"id": budget.id, "org_id": budget.org_id, "threshold": float(budget.threshold), "alert_rules": budget.alert_rules}
+
+
+async def get_budget(db: AsyncSession, *, org_id: str) -> dict | None:
+    result = await db.execute(select(Budget).where(Budget.org_id == org_id))
+    budget = result.scalar_one_or_none()
+    if budget is None:
+        return None
+    return {"id": budget.id, "org_id": budget.org_id, "threshold": float(budget.threshold), "alert_rules": budget.alert_rules}
+
+
+async def update_budget(db: AsyncSession, *, org_id: str, threshold: float | None = None, alert_rules: dict | None = None) -> dict:
+    result = await db.execute(select(Budget).where(Budget.org_id == org_id))
+    budget = result.scalar_one_or_none()
+    if budget is None:
+        raise BillingError(code="NOT_FOUND", message="Budget not found for organization")
+    if threshold is not None:
+        budget.threshold = Decimal(str(threshold))
+    if alert_rules is not None:
+        budget.alert_rules = alert_rules
+    budget.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    return {"ok": True}
+
+
+async def get_records_for_export(db: AsyncSession, *, org_id: str, start_date: str | None = None, end_date: str | None = None) -> list[dict]:
+    q = select(UsageRecord).where(UsageRecord.org_id == org_id)
+    if start_date:
+        q = q.where(UsageRecord.timestamp >= datetime.fromisoformat(start_date))
+    if end_date:
+        q = q.where(UsageRecord.timestamp <= datetime.fromisoformat(end_date))
+    q = q.order_by(UsageRecord.timestamp.desc())
+    rows = (await db.execute(q)).scalars().all()
+    return [
+        {"instance_id": r.instance_id, "model": r.model, "input_tokens": r.input_tokens, "output_tokens": r.output_tokens, "total_tokens": r.total_tokens, "cost": float(r.cost), "timestamp": r.timestamp.isoformat() if r.timestamp else ""}
+        for r in rows
+    ]
+
+
+def export_records_csv(records: list[dict]) -> str:
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["instance_id", "model", "input_tokens", "output_tokens", "total_tokens", "cost", "timestamp"])
+    writer.writeheader()
+    for r in records:
+        writer.writerow(r)
+    return output.getvalue()
+
+
+# ---- Billing Rules CRUD ----
+
+async def create_billing_rule(db: AsyncSession, *, org_id: str, model: str = "*", price_per_input_token: float = 0.0, price_per_output_token: float = 0.0) -> dict:
+    rule = BillingRule(id=str(uuid.uuid4()), org_id=org_id, model=model, price_per_input_token=price_per_input_token, price_per_output_token=price_per_output_token)
+    db.add(rule)
+    await db.flush()
+    await db.refresh(rule)
+    return _rule_to_dict(rule)
+
+
+async def get_billing_rule(db: AsyncSession, *, rule_id: str) -> dict | None:
+    result = await db.execute(select(BillingRule).where(BillingRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    return _rule_to_dict(rule) if rule else None
+
+
+async def list_billing_rules(db: AsyncSession, *, org_id: str, page: int = 1, page_size: int = 20) -> dict:
+    q = select(BillingRule).where(BillingRule.org_id == org_id)
+    count_q = select(func.count()).select_from(q.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+    q = q.order_by(BillingRule.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    rows = (await db.execute(q)).scalars().all()
+    return {"items": [_rule_to_dict(r) for r in rows], "total": total, "page": page, "page_size": page_size}
+
+
+async def update_billing_rule(db: AsyncSession, *, rule_id: str, **fields) -> dict:
+    result = await db.execute(select(BillingRule).where(BillingRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        raise BillingError(code="NOT_FOUND", message="Billing rule not found")
+    for k, v in fields.items():
+        if v is not None and hasattr(rule, k):
+            setattr(rule, k, v)
+    await db.flush()
+    return {"ok": True}
+
+
+async def delete_billing_rule(db: AsyncSession, *, rule_id: str) -> dict:
+    result = await db.execute(select(BillingRule).where(BillingRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        raise BillingError(code="NOT_FOUND", message="Billing rule not found")
+    await db.delete(rule)
+    await db.flush()
+    return {"ok": True}
+
+
+def _rule_to_dict(rule: BillingRule) -> dict:
+    return {
+        "id": rule.id,
+        "org_id": rule.org_id,
+        "model": rule.model,
+        "price_per_input_token": float(rule.price_per_input_token),
+        "price_per_output_token": float(rule.price_per_output_token),
+        "effective_from": rule.effective_from.isoformat() if rule.effective_from else None,
+        "effective_until": rule.effective_until.isoformat() if rule.effective_until else None,
+    }
+
+
+async def get_org_summary(db: AsyncSession, *, org_id: str, period: str = "month") -> dict:
+    """Aggregate billing summary across an org and its direct children."""
+    now = datetime.now(timezone.utc)
+    if period == "month":
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        start = now - timedelta(days=30)
+
+    # Collect org + direct children
+    org_ids = [org_id]
+    result = await db.execute(select(Organization).where(Organization.parent_id == org_id))
+    for child in result.scalars().all():
+        org_ids.append(child.id)
+
+    # Aggregate tokens + cost across all orgs
+    agg = (
+        select(
+            func.coalesce(func.sum(UsageRecord.input_tokens + UsageRecord.output_tokens), 0),
+            func.coalesce(func.sum(UsageRecord.cost), 0),
+        )
+        .where(UsageRecord.org_id.in_(org_ids), UsageRecord.timestamp >= start)
+    )
+    row = (await db.execute(agg)).one()
+    total_tokens = int(row[0])
+    total_cost = round(float(row[1]), 6)
+
+    # Per-org breakdown
+    by_org_q = (
+        select(
+            UsageRecord.org_id,
+            func.sum(UsageRecord.input_tokens + UsageRecord.output_tokens),
+            func.sum(UsageRecord.cost),
+        )
+        .where(UsageRecord.org_id.in_(org_ids), UsageRecord.timestamp >= start)
+        .group_by(UsageRecord.org_id)
+    )
+    by_org = [
+        {"org_id": r[0], "tokens": int(r[1]), "cost": round(float(r[2]), 6)}
+        for r in (await db.execute(by_org_q)).all()
+    ]
+
+    # Budget check
+    budget = await get_budget(db, org_id=org_id)
+    threshold = budget["threshold"] if budget else 0
+    budget_remaining = max(0, round(threshold - total_cost, 6))
+
+    return {
+        "total_tokens": total_tokens,
+        "total_cost": total_cost,
+        "budget": threshold,
+        "budget_remaining": budget_remaining,
+        "by_org": by_org,
     }

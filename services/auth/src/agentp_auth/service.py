@@ -356,6 +356,30 @@ async def revoke_api_key(db: AsyncSession, org_id: str, key_id: str) -> dict:
     return {"ok": True}
 
 
+async def renew_api_key(
+    db: AsyncSession, org_id: str, key_id: str, expires_in_days: int = 30,
+) -> dict:
+    """Renew (extend expiration of) an API key."""
+    if expires_in_days < 1:
+        raise AuthError(code="VALIDATION_ERROR", message="expires_in_days must be at least 1")
+    result = await db.execute(
+        select(ApiKey).where(ApiKey.id == key_id, ApiKey.org_id == org_id, ApiKey.status == "active")
+    )
+    key_obj = result.scalar_one_or_none()
+    if key_obj is None:
+        raise AuthError(code="NOT_FOUND", message="API key not found")
+    old_expires = key_obj.expires_at
+    new_expires = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
+    key_obj.expires_at = new_expires
+    await db.commit()
+    return {
+        "ok": True,
+        "key_id": key_obj.id,
+        "expires_at": new_expires.isoformat(),
+        "old_expires_at": old_expires.isoformat() if old_expires else None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Organization Management
 # ---------------------------------------------------------------------------
@@ -509,6 +533,94 @@ async def list_org_members(
         "page": page,
         "page_size": page_size,
     }
+
+
+# ---------------------------------------------------------------------------
+# Org Member Management
+# ---------------------------------------------------------------------------
+
+VALID_ROLES = {"admin", "manager", "member"}
+
+
+async def add_org_member(
+    db: AsyncSession, org_id: str, user_id: str, role: str = "member",
+) -> dict:
+    if role not in VALID_ROLES:
+        raise AuthError(code="VALIDATION_ERROR", message=f"Invalid role: {role}. Must be one of {VALID_ROLES}")
+    result = await db.execute(select(User).where(User.id == user_id, User.org_id == org_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise AuthError(code="NOT_FOUND", message="User not found in organization")
+    user.role = role
+    user.status = "active"
+    await db.commit()
+    return {"org_id": user.org_id, "user_id": user.id, "role": user.role, "username": user.username}
+
+
+async def remove_org_member(db: AsyncSession, org_id: str, user_id: str) -> dict:
+    result = await db.execute(select(User).where(User.id == user_id, User.org_id == org_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise AuthError(code="NOT_FOUND", message="User not found in organization")
+    user.status = "removed"
+    await db.commit()
+    return {"ok": True}
+
+
+async def update_member_role(db: AsyncSession, org_id: str, user_id: str, role: str) -> dict:
+    if role not in VALID_ROLES:
+        raise AuthError(code="VALIDATION_ERROR", message=f"Invalid role: {role}. Must be one of {VALID_ROLES}")
+    result = await db.execute(select(User).where(User.id == user_id, User.org_id == org_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise AuthError(code="NOT_FOUND", message="User not found in organization")
+    user.role = role
+    await db.commit()
+    return {"ok": True, "user_id": user.id, "role": role}
+
+
+# ---------------------------------------------------------------------------
+# Permissions & Roles
+# ---------------------------------------------------------------------------
+
+PERMISSION_DESCRIPTIONS = {
+    "agents:create": "Create agent instances",
+    "agents:read": "View agent instances",
+    "agents:destroy": "Delete agent instances",
+    "agents:manage": "Full agent lifecycle management",
+    "members:read": "View organization members",
+    "members:manage": "Add, remove, or update members",
+    "billing:read": "View billing information",
+    "billing:manage": "Modify billing rules",
+    "configs:manage": "Create and modify agent configs",
+    "approvals:read": "View approval requests",
+    "approvals:manage": "Review and decide on approvals",
+    "org:manage": "Organization settings management",
+    "permissions:read": "View permission and role definitions",
+    "roles:manage": "Assign and modify user roles",
+}
+
+
+def get_permissions() -> list[dict]:
+    from agentp_shared.security import ALL_PERMISSIONS
+    return [
+        {
+            "id": perm,
+            "description": PERMISSION_DESCRIPTIONS.get(perm, ""),
+        }
+        for perm in ALL_PERMISSIONS
+    ]
+
+
+def get_roles() -> list[dict]:
+    from agentp_shared.security import ROLE_PERMISSIONS
+    return [
+        {
+            "name": role,
+            "permissions": perms,
+        }
+        for role, perms in ROLE_PERMISSIONS.items()
+    ]
 
 
 # ---------------------------------------------------------------------------

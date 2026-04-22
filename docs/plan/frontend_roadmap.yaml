@@ -1,0 +1,1463 @@
+# ============================================================================
+# agent-platform Frontend Implementation Roadmap
+# ============================================================================
+# React 18 + TypeScript + Ant Design 5.x + Vite + Zustand
+# Dual Theme: Claude Warm Cream (light) + GitHub Dark (dark)
+# Desktop-first, min-width 1280px
+# ============================================================================
+
+plan_id: frontend-roadmap
+objective: |
+  Implement a complete React + TypeScript + Ant Design 5.x frontend console
+  for the agent-platform, with dual theme support (warm cream light + GitHub Dark),
+  covering MVP (15 pages) and full roadmap (27 pages).
+
+created_at: "2026-04-20"
+created_by: gem-planner
+status: pending
+research_confidence: high
+
+plan_metrics:
+  total_mvp_tasks: 32
+  total_mvp_waves: 4
+  wave_1_task_count: 8
+  total_dependencies: 38
+  estimated_files: 95
+  risk_score: 4  # 1-10 scale
+
+tldr: |
+  4-wave MVP plan for agent-platform frontend. Wave 1 scaffolds infrastructure
+  (Vite, theme, auth, layout, routing). Wave 2 delivers login + dashboard + agent pages.
+  Wave 3 adds market + organization. Wave 4 adds billing + polish. Post-MVP roadmap
+  covers builder editor, approvals, memory, budget, i18n.
+
+open_questions: []
+
+pre_mortem:
+  overall_risk_level: low
+  critical_failure_modes:
+    - scenario: "Ant Design 5.x theme token system doesn't cover all custom components"
+      likelihood: low
+      impact: medium
+      mitigation: "Use CSS variables as escape hatch; override only via theme token or CSS var"
+    - scenario: "Backend API response format drifts from api-protocol.md"
+      likelihood: low
+      impact: high
+      mitigation: "Frontend axios interceptor validates response shape; TypeScript types enforce contract"
+    - scenario: "JWT refresh race condition in concurrent requests"
+      likelihood: medium
+      impact: medium
+      mitigation: "Implement request queue: hold concurrent requests during token refresh, replay after"
+  assumptions:
+    - "All backend APIs are production-ready (283+ tests passing)"
+    - "Gateway runs on localhost:8000 during development"
+    - "Browser target: Chrome/Edge (latest), no IE11"
+    - "No SSR required; SPA only"
+    - "i18n deferred to Phase 9; first phase Chinese only"
+
+# ============================================================================
+# DESIGN TOKENS
+# ============================================================================
+
+design_tokens:
+  light_theme:  # Claude Warm Cream
+    name: "Light - Claude Warm Cream"
+    colors:
+      primary: "#E8764B"             # warm orange/coral accent
+      primary_hover: "#D4682F"
+      primary_active: "#C05A23"
+      primary_bg: "rgba(232, 118, 75, 0.08)"
+      secondary: "#7C6F5B"           # warm brown
+      background: "#FAF6F0"          # warm cream page bg
+      surface: "#FFFFFF"             # card/panel bg
+      surface_elevated: "#FFFFFF"
+      text_primary: "#2D2318"        # dark warm brown
+      text_secondary: "#7C6F5B"
+      text_tertiary: "#A99E90"
+      border: "#E8E0D4"             # warm border
+      border_light: "#F0EBE3"
+      success: "#4CAF50"
+      warning: "#FF9800"
+      error: "#E53935"
+      info: "#42A5F5"
+      shadow_color: "rgba(45, 35, 24, 0.06)"
+    typography:
+      font_family: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+      font_size_base: "14px"
+      font_size_sm: "12px"
+      font_size_lg: "16px"
+      font_size_xl: "20px"
+      font_size_heading: "24px"
+      line_height: "1.6"
+    spacing:
+      xs: "4px"
+      sm: "8px"
+      md: "16px"
+      lg: "24px"
+      xl: "32px"
+      xxl: "48px"
+    border_radius:
+      sm: "6px"
+      md: "10px"
+      lg: "16px"
+      xl: "20px"
+    shadows:
+      sm: "0 1px 3px rgba(45, 35, 24, 0.06)"
+      md: "0 4px 12px rgba(45, 35, 24, 0.08)"
+      lg: "0 8px 24px rgba(45, 35, 24, 0.12)"
+
+  dark_theme:  # GitHub Dark
+    name: "Dark - GitHub Dark"
+    colors:
+      primary: "#58A6FF"             # GitHub blue accent
+      primary_hover: "#79B8FF"
+      primary_active: "#388BFD"
+      primary_bg: "rgba(88, 166, 255, 0.1)"
+      secondary: "#8B949E"
+      background: "#0D1117"          # GitHub dark bg
+      surface: "#161B22"             # card/panel bg
+      surface_elevated: "#1C2128"
+      text_primary: "#E6EDF3"        # light text
+      text_secondary: "#8B949E"
+      text_tertiary: "#6E7681"
+      border: "#30363D"              # GitHub border
+      border_light: "#21262D"
+      success: "#3FB950"
+      warning: "#D29922"
+      error: "#F85149"
+      info: "#58A6FF"
+      shadow_color: "rgba(0, 0, 0, 0.3)"
+    typography:
+      font_family: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+      font_size_base: "14px"
+      font_size_sm: "12px"
+      font_size_lg: "16px"
+      font_size_xl: "20px"
+      font_size_heading: "24px"
+      line_height: "1.6"
+    spacing:  # Same as light
+      xs: "4px"
+      sm: "8px"
+      md: "16px"
+      lg: "24px"
+      xl: "32px"
+      xxl: "48px"
+    border_radius:
+      sm: "6px"
+      md: "10px"
+      lg: "16px"
+      xl: "20px"
+    shadows:
+      sm: "0 1px 3px rgba(0, 0, 0, 0.2)"
+      md: "0 4px 12px rgba(0, 0, 0, 0.3)"
+      lg: "0 8px 24px rgba(0, 0, 0, 0.4)"
+
+  shared:
+    component_overrides:
+      Button:
+        border_radius: "8px"
+        font_weight: "500"
+        padding: "4px 15px"
+      Table:
+        border_radius: "10px"
+        header_bg_light: "#F8F4EE"
+        header_bg_dark: "#161B22"
+        row_hover_light: "rgba(232, 118, 75, 0.04)"
+        row_hover_dark: "rgba(88, 166, 255, 0.04)"
+      Card:
+        border_radius: "14px"
+        padding: "20px"
+      Input:
+        border_radius: "8px"
+      Modal:
+        border_radius: "14px"
+      Menu:
+        item_border_radius: "8px"
+        item_margin_inline: "4px"
+      Tag:
+        border_radius: "6px"
+      Badge:
+        font_size: "11px"
+      Tabs:
+        ink_bar_color_primary: "#E8764B"
+        ink_bar_color_primary_dark: "#58A6FF"
+
+# ============================================================================
+# IMPLEMENTATION SPECIFICATION
+# ============================================================================
+
+implementation_specification:
+  code_structure: |
+    Standard Vite + React SPA with feature-based folder structure.
+    API layer in src/api/ with typed axios client. Zustand stores in src/store/.
+    Theme system via Ant Design ConfigProvider token override + CSS variables.
+    Route-based code splitting via React.lazy().
+
+  affected_areas:
+    - "agent-platform/frontend/ (entire new directory)"
+    - "agent-platform/docs/plan/ (this plan file)"
+
+  component_details:
+    - component: "ThemeSystem"
+      responsibility: "Dual theme management via Ant Design ConfigProvider tokens + CSS variables"
+      interfaces:
+        - "ThemeProvider component wrapping App"
+        - "useTheme() hook returning { theme, toggleTheme, isDark }"
+        - "lightTheme.ts / darkTheme.ts exporting Ant Design ThemeConfig objects"
+    - component: "AuthSystem"
+      responsibility: "JWT auth flow: login, token storage, auto-refresh, route guards"
+      interfaces:
+        - "authStore (Zustand): token, user, login(), logout(), refresh()"
+        - "AuthGuard component for protected routes"
+        - "RoleGuard component for role-based access"
+    - component: "ApiLayer"
+      responsibility: "Typed HTTP client with interceptors for auth, error handling, request ID"
+      interfaces:
+        - "apiClient (Axios instance) with request/response interceptors"
+        - "Per-module API files: auth.ts, agents.ts, builder.ts, market.ts, billing.ts, org.ts, approvals.ts, memory.ts, tasks.ts"
+    - component: "MainLayout"
+      responsibility: "Sidebar navigation + top header bar + content area"
+      interfaces:
+        - "MainLayout component with <Outlet />"
+        - "Sidebar with role-filtered menu items"
+        - "Header with theme switch dropdown, user menu"
+
+  dependencies:
+    - component: "ThemeSystem"
+      relationship: "Used by MainLayout (header theme switch), App.tsx (ThemeProvider wrapper)"
+    - component: "AuthSystem"
+      relationship: "Used by ApiLayer (token injection), Router (AuthGuard), MainLayout (user menu)"
+    - component: "ApiLayer"
+      relationship: "Used by all page components for data fetching"
+
+  integration_points:
+    - "Gateway at VITE_GATEWAY_URL (default http://localhost:8000)"
+    - "All API calls via /api/v1/ prefix"
+    - "WebSocket at ws://{GATEWAY_URL}/api/v1/agents/{id}/stream"
+
+# ============================================================================
+# CONTRACTS (inter-task dependencies)
+# ============================================================================
+
+contracts:
+  - from_task: FE-W1-001
+    to_task: FE-W1-002
+    interface: "package.json with all dependencies installed, tsconfig.json configured"
+    format: "npm project files"
+  - from_task: FE-W1-002
+    to_task: FE-W1-004
+    interface: "ThemeConfig objects for light/dark themes, ThemeProvider component"
+    format: "TypeScript modules"
+  - from_task: FE-W1-003
+    to_task: FE-W1-006
+    interface: "apiClient instance with JWT interceptors, per-module API files"
+    format: "TypeScript modules"
+  - from_task: FE-W1-005
+    to_task: FE-W1-006
+    interface: "authStore with token, user, login/logout, Zustand store"
+    format: "Zustand store module"
+  - from_task: FE-W1-006
+    to_task: FE-W2-001
+    interface: "MainLayout component with sidebar, header, content outlet"
+    format: "React component"
+  - from_task: FE-W1-007
+    to_task: FE-W2-002
+    interface: "Route definitions with lazy loading, AuthGuard"
+    format: "React Router config"
+  - from_task: FE-W1-002
+    to_task: FE-W2-002
+    interface: "Theme tokens applied via ConfigProvider in App.tsx"
+    format: "React context"
+  - from_task: FE-W1-008
+    to_task: FE-W2-003
+    interface: "TypeScript type definitions for all API responses"
+    format: "TypeScript type declarations"
+
+# ============================================================================
+# MVP TASKS - WAVE 1: FOUNDATION
+# ============================================================================
+
+tasks:
+
+  # ─── Wave 1: Foundation ─────────────────────────────────────────────────
+
+  - id: FE-W1-001
+    title: "Project scaffolding (Vite + React 18 + TS + Ant Design)"
+    description: |
+      Initialize the Vite project with React 18, TypeScript strict mode,
+      and install all core dependencies. Configure tsconfig.json, vite.config.ts
+      with path aliases (@/ -> src/), and environment files.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/package.json"
+      - "agent-platform/frontend/tsconfig.json"
+      - "agent-platform/frontend/tsconfig.node.json"
+      - "agent-platform/frontend/vite.config.ts"
+      - "agent-platform/frontend/index.html"
+      - "agent-platform/frontend/.env.development"
+      - "agent-platform/frontend/.env.production"
+      - "agent-platform/frontend/src/vite-env.d.ts"
+      - "agent-platform/frontend/src/main.tsx"
+      - "agent-platform/frontend/public/favicon.ico"
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 120
+    focus_area: "Project configuration"
+    tech_stack:
+      - "Vite 5.x"
+      - "React 18"
+      - "TypeScript 5.x"
+    verification:
+      - "`npm run dev` starts without errors"
+      - "`npm run build` completes without type errors"
+      - "Path alias @/ resolves correctly"
+    acceptance_criteria:
+      - "Vite dev server starts on localhost:5173"
+      - "React app renders placeholder content"
+      - "TypeScript strict mode enabled"
+      - "All dependencies listed in package.json"
+
+  - id: FE-W1-002
+    title: "Theme system (light/dark with Ant Design tokens)"
+    description: |
+      Implement dual theme system. Create lightTheme.ts and darkTheme.ts with
+      full Ant Design 5.x ThemeConfig token overrides matching design_tokens spec.
+      Create ThemeProvider that wraps ConfigProvider and persists theme choice
+      to localStorage. Apply CSS variables on :root for non-Ant components.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-001
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/theme/index.ts"
+      - "agent-platform/frontend/src/theme/lightTheme.ts"
+      - "agent-platform/frontend/src/theme/darkTheme.ts"
+      - "agent-platform/frontend/src/theme/ThemeProvider.tsx"
+      - "agent-platform/frontend/src/store/themeStore.ts"
+      - "agent-platform/frontend/src/hooks/useTheme.ts"
+      - "agent-platform/frontend/src/styles/global.css"
+    context_files:
+      - path: "agent-platform/docs/plan/frontend_roadmap.yaml"
+        description: "Design tokens specification (light_theme, dark_theme, shared)"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 250
+    focus_area: "Theme system"
+    tech_stack:
+      - "Ant Design 5.x ConfigProvider"
+      - "Zustand"
+      - "CSS Variables"
+    verification:
+      - "Theme toggle switches all components"
+      - "localStorage persists theme choice"
+      - "Both themes match design_tokens spec"
+    acceptance_criteria:
+      - "Light theme uses #FAF6F0 background, #E8764B primary"
+      - "Dark theme uses #0D1117 background, #58A6FF primary"
+      - "Theme persists across page reloads"
+      - "All design token values from spec are applied"
+
+  - id: FE-W1-003
+    title: "Axios client with JWT interceptors"
+    description: |
+      Create typed Axios instance with baseURL from env. Implement request
+      interceptor to inject Bearer token. Implement response interceptor for:
+      - Auto-refresh on 401 (queue concurrent requests during refresh)
+      - Error code mapping per api-protocol.md section 2.3
+      - Request ID extraction for dev mode status bar
+      - UNAUTHORIZED -> redirect to /login
+      - VALIDATION_ERROR -> field-level form errors
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-001
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/api/client.ts"
+      - "agent-platform/frontend/src/api/auth.ts"
+    context_files:
+      - path: "agent-platform/docs/api-protocol.md"
+        description: "API contract: auth endpoints, error codes, response format"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 180
+    focus_area: "HTTP client layer"
+    tech_stack:
+      - "Axios"
+    verification:
+      - "Token injected in request Authorization header"
+      - "401 triggers refresh, then replays original request"
+      - "Error codes map to correct UI actions"
+    acceptance_criteria:
+      - "Bearer token auto-attached to all requests"
+      - "JWT refresh handles concurrent request queuing"
+      - "All error codes from api-protocol.md handled"
+      - "Request ID available in dev mode"
+
+  - id: FE-W1-004
+    title: "API module files (agents, builder, market, billing, org, approvals, memory, tasks)"
+    description: |
+      Create typed API modules for each backend service. Each file exports functions
+      matching the API contract in api-protocol.md. All functions use the apiClient
+      from client.ts and return typed responses. Include all endpoints: auth,
+      agents (CRUD + batch + command + skills + mcp + config + monitor + memory + message + stream),
+      builder (CRUD + publish + duplicate + versions + preview + validate + import + export),
+      market (templates + skills + mcps + categories), billing (summary + records + export + budget),
+      org (tree + CRUD + members + api-keys + permissions + roles), approvals (list + approve + reject + history),
+      memory (assets + search), tasks (status).
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-003
+      - FE-W1-008
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/api/agents.ts"
+      - "agent-platform/frontend/src/api/builder.ts"
+      - "agent-platform/frontend/src/api/market.ts"
+      - "agent-platform/frontend/src/api/billing.ts"
+      - "agent-platform/frontend/src/api/org.ts"
+      - "agent-platform/frontend/src/api/approvals.ts"
+      - "agent-platform/frontend/src/api/memory.ts"
+      - "agent-platform/frontend/src/api/tasks.ts"
+    context_files:
+      - path: "agent-platform/docs/api-protocol.md"
+        description: "Complete API contract for all modules"
+      - path: "agent-platform/frontend/src/types/index.ts"
+        description: "TypeScript type definitions (dependency)"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 280
+    focus_area: "API layer"
+    tech_stack:
+      - "Axios"
+      - "TypeScript"
+    verification:
+      - "Each API module exports typed functions"
+      - "Function signatures match api-protocol.md endpoints"
+      - "No 'any' types in API responses"
+    acceptance_criteria:
+      - "All 50+ API endpoints have typed wrapper functions"
+      - "Request/response types match api-protocol.md exactly"
+      - "WebSocket stream helper for agent interaction"
+
+  - id: FE-W1-005
+    title: "Auth store (Zustand) + login/logout flow"
+    description: |
+      Create Zustand auth store with: token, refreshToken, user object,
+      isAuthenticated flag, role. Implement login() calling POST /api/v1/auth/login,
+      logout() clearing state and redirecting, refresh() calling POST /api/v1/auth/refresh,
+      fetchMe() calling GET /api/v1/auth/me on app init. Persist token to localStorage.
+      Role enum: super_admin | org_admin | team_admin | user.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-001
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/store/authStore.ts"
+      - "agent-platform/frontend/src/hooks/useAuth.ts"
+    context_files:
+      - path: "agent-platform/docs/api-protocol.md"
+        description: "Auth API endpoints (4.1)"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 120
+    focus_area: "Auth state management"
+    tech_stack:
+      - "Zustand"
+      - "TypeScript"
+    verification:
+      - "Login stores token + user in Zustand + localStorage"
+      - "Logout clears all auth state"
+      - "App init calls fetchMe to validate existing token"
+    acceptance_criteria:
+      - "authStore exposes: token, user, isAuthenticated, role, login(), logout(), refresh()"
+      - "Token persists in localStorage across reloads"
+      - "useAuth() hook provides reactive auth state"
+
+  - id: FE-W1-006
+    title: "Main layout (sidebar + header + content area)"
+    description: |
+      Create MainLayout with three zones:
+      - Left sidebar: collapsible, logo at top, navigation menu items filtered
+        by user role, active route highlighting, collapse to icon-only mode.
+      - Top header bar: breadcrumb or page title on left, theme switch dropdown
+        (sun/moon icon) + user avatar/name dropdown (profile, logout) on right.
+      - Content area: <Outlet /> for routed pages with proper padding.
+      Menu items: Dashboard, Agents, Market, Builder, Billing, Org (admin),
+      Approvals (admin), Memory. Use Ant Design Layout, Menu, Dropdown, Avatar.
+    wave: 1
+    agent: gem-designer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-002
+      - FE-W1-005
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/layouts/MainLayout.tsx"
+      - "agent-platform/frontend/src/layouts/Sidebar.tsx"
+      - "agent-platform/frontend/src/layouts/Header.tsx"
+    context_files:
+      - path: "agent-platform/docs/plan/frontend_roadmap.yaml"
+        description: "Design tokens for colors, spacing, border-radius"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 280
+    focus_area: "Layout system"
+    tech_stack:
+      - "Ant Design 5.x Layout"
+      - "React Router v6"
+      - "Zustand"
+    verification:
+      - "Sidebar collapses to icon-only mode"
+      - "Theme switch toggles instantly"
+      - "Menu items filter by user role"
+      - "Active route is highlighted in sidebar"
+    acceptance_criteria:
+      - "Sidebar shows role-filtered navigation"
+      - "Header has theme switch + user dropdown"
+      - "Layout responsive to 1280px+ screens"
+      - "Active menu item matches current route"
+
+  - id: FE-W1-007
+    title: "Route definitions with lazy loading + AuthGuard"
+    description: |
+      Define all 27 routes per frontend-require.md section 6. Implement AuthGuard
+      component that checks authStore.isAuthenticated, redirects to /login if not.
+      Implement RoleGuard component that checks user role against required role.
+      Use React.lazy() + Suspense for code splitting on all page components.
+      Route structure: /login (public), /(authenticated: MainLayout wrapper),
+      /dashboard, /agents, /agents/new, /agents/:id, /market/*, /builder/*,
+      /billing/*, /org/*, /permissions, /approvals/*, /memory/*, /403.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-002
+      - FE-W1-005
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/router/index.tsx"
+      - "agent-platform/frontend/src/components/AuthGuard.tsx"
+      - "agent-platform/frontend/src/components/RoleGuard.tsx"
+      - "agent-platform/frontend/src/components/ErrorBoundary.tsx"
+      - "agent-platform/frontend/src/App.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Route structure (section 6), role-based access (section 2)"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 200
+    focus_area: "Routing system"
+    tech_stack:
+      - "React Router v6"
+      - "React.lazy + Suspense"
+    verification:
+      - "Unauthenticated access redirects to /login"
+      - "Role mismatch redirects to /403"
+      - "Each page lazy-loads its bundle"
+    acceptance_criteria:
+      - "All 27 routes defined with lazy loading"
+      - "AuthGuard protects all authenticated routes"
+      - "RoleGuard available as route element wrapper"
+      - "ErrorBoundary catches render errors gracefully"
+
+  - id: FE-W1-008
+    title: "TypeScript type definitions for all API entities"
+    description: |
+      Define TypeScript interfaces/types for all API request/response objects.
+      Cover: User, Agent, AgentConfig (full builder model from api-protocol 4.3.1),
+      Template, Skill, McpServer, BillingSummary, BillingRecord, Budget,
+      Org, OrgMember, ApiKey, Permission, Role, Approval, MemoryAsset,
+      TaskStatus, PaginatedResponse, ErrorResponse, StreamEvent.
+      Export from src/types/index.ts.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-001
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/types/index.ts"
+    context_files:
+      - path: "agent-platform/docs/api-protocol.md"
+        description: "All API response/request schemas"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 280
+    focus_area: "Type system"
+    tech_stack:
+      - "TypeScript"
+    verification:
+      - "No 'any' types used"
+      - "All API response shapes have corresponding interfaces"
+      - "AgentConfig matches api-protocol 4.3.1 exactly"
+    acceptance_criteria:
+      - "Complete type coverage for all 9 API modules"
+      - "AgentConfig interface matches backend data model exactly"
+      - "PaginatedResponse<T> generic type for list endpoints"
+      - "Union types for enums (status, role, visibility, etc.)"
+
+  # ─── Wave 2: Core Pages ─────────────────────────────────────────────────
+
+  - id: FE-W2-001
+    title: "Login page (API Key auth)"
+    description: |
+      Full-page login with centered card on background. Input for API Key,
+      submit button. On success: store token + user, redirect to /dashboard.
+      Error display for invalid key. Clean design matching theme tokens.
+      No sidebar/header on this page. Support Enter key to submit.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-006
+      - FE-W1-007
+      - FE-W1-005
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/login/index.tsx"
+      - "agent-platform/frontend/src/pages/login/LoginForm.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Login page spec (section 4.1)"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 120
+    focus_area: "Login"
+    tech_stack:
+      - "Ant Design 5.x Form, Input, Button, Card"
+      - "React Router v6"
+    verification:
+      - "Valid API Key logs in and redirects to /dashboard"
+      - "Invalid key shows error message"
+      - "Enter key submits form"
+    acceptance_criteria:
+      - "API Key input + login button"
+      - "Successful login redirects to /dashboard"
+      - "Error message on invalid credentials"
+      - "No sidebar/header rendered on login page"
+
+  - id: FE-W2-002
+    title: "Dashboard page (personal tab with ECharts)"
+    description: |
+      Three-tab dashboard based on user role. Personal tab (all users):
+      - Agent instance list table (name, status badge, last active) with
+        quick actions (new/restart/destroy)
+      - 7-day personal cost trend line chart (ECharts)
+      Org tab (org/team admin):
+      - Agent status distribution pie chart
+      - Org cost summary + budget progress bar
+      - Pending approval count badge
+      System tab (super admin):
+      - Service health cards (static mock first phase)
+      - Resource usage overview
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-006
+      - FE-W1-007
+      - FE-W1-004
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/dashboard/index.tsx"
+      - "agent-platform/frontend/src/pages/dashboard/PersonalDashboard.tsx"
+      - "agent-platform/frontend/src/pages/dashboard/OrgDashboard.tsx"
+      - "agent-platform/frontend/src/pages/dashboard/SystemDashboard.tsx"
+      - "agent-platform/frontend/src/hooks/usePolling.ts"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Dashboard spec (section 4.2)"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 280
+    focus_area: "Dashboard"
+    tech_stack:
+      - "Ant Design 5.x Tabs, Table, Card, Progress, Statistic"
+      - "ECharts (echarts-for-react)"
+    verification:
+      - "Personal tab shows agent list + cost chart"
+      - "Tabs filter by user role"
+      - "ECharts renders with theme colors"
+    acceptance_criteria:
+      - "Three role-filtered tabs render correctly"
+      - "Personal tab: agent list + 7-day cost trend chart"
+      - "Org tab: status pie chart + budget progress + approval badge"
+      - "System tab: service health cards"
+
+  - id: FE-W2-003
+    title: "Agent list page (ProTable with batch ops)"
+    description: |
+      Agent instance list with Ant Design Table (ProTable-style).
+      Columns: name, GUID (truncated), status badge (color-coded per
+      frontend-require.md), host node, model, created_at, last_active_at.
+      Filters: status dropdown, name search, date range.
+      Batch operations toolbar: select rows, batch restart, batch destroy
+      with confirmation modal.
+      Row actions: view detail, restart, destroy.
+      Status badge colors: ready=green, running=blue, creating/seeding=yellow,
+      stopped=gray, failed=red.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-006
+      - FE-W1-007
+      - FE-W1-004
+      - FE-W1-008
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/agents/AgentList.tsx"
+      - "agent-platform/frontend/src/pages/agents/index.tsx"
+      - "agent-platform/frontend/src/components/StatusBadge.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Agent list spec (section 4.3.1)"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 250
+    focus_area: "Agent list"
+    tech_stack:
+      - "Ant Design 5.x Table, Badge, Button, Modal, Popconfirm"
+      - "TypeScript"
+    verification:
+      - "Table renders agent list with pagination"
+      - "Status badges show correct colors"
+      - "Batch select + restart/destroy works"
+      - "Filters narrow results correctly"
+    acceptance_criteria:
+      - "ProTable with all specified columns"
+      - "Status badge color mapping per spec"
+      - "Batch restart/destroy with confirmation"
+      - "Row actions: view, restart, destroy"
+      - "Pagination + status/name/date filters"
+
+  - id: FE-W2-004
+    title: "Agent detail page (info + controls + memory + monitor tabs)"
+    description: |
+      Four-panel agent detail page using Tabs:
+      1. Basic Info card: GUID, status, host node, model config, created_at
+      2. Controls panel: command input + output terminal, install skill button,
+         configure MCP button, edit system prompt / permission mode
+      3. Memory panel: file tree display, upload button, download per file
+      4. Monitor panel: CPU/memory real-time line chart (poll 5s), token counter
+      API calls: GET /api/v1/agents/{id}, monitor, memory/tree, etc.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W2-003
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/agents/AgentDetail.tsx"
+      - "agent-platform/frontend/src/pages/agents/panels/InfoPanel.tsx"
+      - "agent-platform/frontend/src/pages/agents/panels/ControlPanel.tsx"
+      - "agent-platform/frontend/src/pages/agents/panels/MemoryPanel.tsx"
+      - "agent-platform/frontend/src/pages/agents/panels/MonitorPanel.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Agent detail spec (section 4.3.2)"
+    estimated_effort: large
+    estimated_files: 3
+    estimated_lines: 300
+    focus_area: "Agent detail"
+    tech_stack:
+      - "Ant Design 5.x Tabs, Card, Descriptions, Tree, Upload, Input"
+      - "ECharts"
+    verification:
+      - "All four tabs render with data"
+      - "Monitor chart updates every 5s"
+      - "Memory tree loads and files downloadable"
+    acceptance_criteria:
+      - "Info panel: GUID, status, host, model, timestamps"
+      - "Control panel: command execution, skill install, MCP config"
+      - "Memory panel: file tree + upload/download"
+      - "Monitor panel: real-time CPU/memory charts + token count"
+
+  - id: FE-W2-005
+    title: "New Agent page (template selection + config form)"
+    description: |
+      Agent creation form: template selector dropdown (from market templates),
+      name input, model selector, resource spec, skill/MCP pre-configuration.
+      Submit calls POST /api/v1/agents, receives task_id, redirects to agent
+      list with creation progress indicator (poll GET /api/v1/tasks/{task_id}).
+      Support "create from scratch" (no template) and "create from template"
+      (pre-fill config from template).
+    wave: 2
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W2-003
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/agents/NewAgent.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "New agent spec (section 4.3.3)"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 200
+    focus_area: "Agent creation"
+    tech_stack:
+      - "Ant Design 5.x Form, Select, Input, Button, Steps"
+    verification:
+      - "Template selection loads template config"
+      - "Form validation prevents empty name"
+      - "Submit creates agent and shows progress"
+    acceptance_criteria:
+      - "Template dropdown loads from market API"
+      - "Form fields: name, model, config"
+      - "Submit returns task_id, polls for completion"
+      - "Redirect to agent list on success"
+
+  # ─── Wave 3: Market & Organization ─────────────────────────────────────
+
+  - id: FE-W3-001
+    title: "Market home page (categories + search + card grid)"
+    description: |
+      Market landing: left sidebar with category navigation (from GET /api/v1/market/categories),
+      top search bar with keyword filter, template card grid layout.
+      Each card: name, description, scenario tags, skill/MCP count badges,
+      usage count, "use template" button.
+      Card click navigates to template detail.
+      Category filter and search work together.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-006
+      - FE-W1-007
+      - FE-W1-004
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/market/MarketHome.tsx"
+      - "agent-platform/frontend/src/pages/market/index.tsx"
+      - "agent-platform/frontend/src/pages/market/TemplateCard.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Market home spec (section 4.4.1)"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: "Market"
+    tech_stack:
+      - "Ant Design 5.x Card, Input.Search, Menu, Row, Col, Tag, Badge"
+    verification:
+      - "Categories load and filter templates"
+      - "Search filters by keyword"
+      - "Card grid renders with template data"
+    acceptance_criteria:
+      - "Left sidebar category navigation"
+      - "Top search bar with keyword filter"
+      - "Template card grid with all specified info"
+      - "Category + search filters combine correctly"
+
+  - id: FE-W3-002
+    title: "Template detail page"
+    description: |
+      Template detail view: name, description, scenario, pre-configured
+      skill list, MCP list, resource spec, usage count stats.
+      "Use this template" button at bottom -> navigates to /agents/new
+      with template config pre-filled (via route state).
+    wave: 3
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W3-001
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/market/TemplateDetail.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Template detail spec (section 4.4.2)"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 150
+    focus_area: "Market detail"
+    tech_stack:
+      - "Ant Design 5.x Descriptions, List, Tag, Button, Statistic"
+    verification:
+      - "Template details render completely"
+      - "'Use template' navigates with config state"
+    acceptance_criteria:
+      - "Full template info display"
+      - "Skill/MCP lists with descriptions"
+      - "'Use template' passes config to new agent page"
+
+  - id: FE-W3-003
+    title: "Skill store + MCP store pages"
+    description: |
+      Skill store: list view with search, columns: name, description, author,
+      version. Each row has "install to agent" action -> modal to select target agent.
+      MCP store: list view with search, columns: name, transport protocol badge
+      (stdio/http/ws), description, config template preview.
+      "Configure to agent" action -> modal with pre-filled config form.
+    wave: 3
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W3-001
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/market/SkillStore.tsx"
+      - "agent-platform/frontend/src/pages/market/McpStore.tsx"
+      - "agent-platform/frontend/src/pages/market/InstallSkillModal.tsx"
+      - "agent-platform/frontend/src/pages/market/ConfigureMcpModal.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Skill store (4.4.3) + MCP store (4.4.4) specs"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 250
+    focus_area: "Market stores"
+    tech_stack:
+      - "Ant Design 5.x Table, Modal, Form, Tag, Input.Search"
+    verification:
+      - "Skill list loads with search"
+      - "MCP list loads with transport badges"
+      - "Install/config modals submit correctly"
+    acceptance_criteria:
+      - "Skill store: searchable list with install action"
+      - "MCP store: searchable list with configure action"
+      - "Install modal selects target agent"
+      - "Configure modal pre-fills MCP config template"
+
+  - id: FE-W3-004
+    title: "Organization tree page"
+    description: |
+      Org hierarchy display using Ant Design Tree component.
+      Load org tree from GET /api/v1/org/tree?depth=3.
+      Click node to select and view org details (name, quota, member count)
+      in a side panel or below the tree.
+      Support expand/collapse. Highlight current user's org.
+    wave: 3
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W1-006
+      - FE-W1-007
+      - FE-W1-004
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/org/OrgTree.tsx"
+      - "agent-platform/frontend/src/pages/org/index.tsx"
+      - "agent-platform/frontend/src/pages/org/OrgDetailPanel.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Org tree spec (section 4.7.1)"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 200
+    focus_area: "Organization"
+    tech_stack:
+      - "Ant Design 5.x Tree, Card, Descriptions"
+    verification:
+      - "Tree loads org hierarchy"
+      - "Clicking node shows org details"
+      - "Current user's org highlighted"
+    acceptance_criteria:
+      - "Tree displays 3-level org hierarchy"
+      - "Click org node shows detail panel"
+      - "Expand/collapse works"
+      - "Current org highlighted"
+
+  - id: FE-W3-005
+    title: "Member management page"
+    description: |
+      Member list for selected org: Table with name, role, joined date.
+      Actions: add member (modal with user select + role assign),
+      remove member (confirm), change role (dropdown).
+      API: GET/POST/DELETE/PUT /api/v1/org/{id}/members.
+    wave: 3
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W3-004
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/org/MemberManagement.tsx"
+      - "agent-platform/frontend/src/pages/org/AddMemberModal.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Member management spec (section 4.7.2)"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 180
+    focus_area: "Organization members"
+    tech_stack:
+      - "Ant Design 5.x Table, Modal, Form, Select, Popconfirm"
+    verification:
+      - "Member list renders with pagination"
+      - "Add/remove/change role works"
+    acceptance_criteria:
+      - "Member table with role badges"
+      - "Add member modal with user + role selection"
+      - "Remove member with confirmation"
+      - "Role change via inline dropdown"
+
+  - id: FE-W3-006
+    title: "API Key management page"
+    description: |
+      API Key list: Table with label, user, permissions scope, created_at,
+      expires_at, last_used_at. Actions: create new key (modal with label,
+      permissions, expiry days), revoke (confirm), renew (modal with new expiry).
+      Show full key only once on creation (copy-to-clipboard + dismiss).
+      API: GET/POST/DELETE /api/v1/org/{id}/api-keys.
+    wave: 3
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W3-004
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/org/ApiKeyManagement.tsx"
+      - "agent-platform/frontend/src/pages/org/CreateKeyModal.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "API Key management spec (section 4.7.3)"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 200
+    focus_area: "API Key management"
+    tech_stack:
+      - "Ant Design 5.x Table, Modal, Form, Input, Select, Popconfirm, Typography"
+    verification:
+      - "Key list renders with expiry status"
+      - "Create key shows key once, then masked"
+      - "Revoke and renew work"
+    acceptance_criteria:
+      - "API Key table with all specified columns"
+      - "Create key modal with label + permissions + expiry"
+      - "Full key shown once with copy button"
+      - "Revoke with confirmation, renew with modal"
+
+  # ─── Wave 4: Billing & Polish ──────────────────────────────────────────
+
+  - id: FE-W4-001
+    title: "Billing overview page with ECharts"
+    description: |
+      Billing dashboard: summary cards (total tokens, total cost, budget remaining
+      with progress bar), agent consumption ranking bar chart, model consumption
+      pie chart, daily trend line chart.
+      All charts use ECharts with theme-aware colors.
+      Period selector: week/month/quarter.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-006
+      - FE-W1-007
+      - FE-W1-004
+      - FE-W1-002
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/billing/BillingOverview.tsx"
+      - "agent-platform/frontend/src/pages/billing/index.tsx"
+      - "agent-platform/frontend/src/pages/billing/charts/AgentRankChart.tsx"
+      - "agent-platform/frontend/src/pages/billing/charts/ModelPieChart.tsx"
+      - "agent-platform/frontend/src/pages/billing/charts/DailyTrendChart.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Billing overview spec (section 4.6.1)"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 250
+    focus_area: "Billing"
+    tech_stack:
+      - "Ant Design 5.x Card, Statistic, Progress, DatePicker, Radio"
+      - "ECharts"
+    verification:
+      - "Summary cards show correct values"
+      - "All three charts render with real data"
+      - "Period selector changes data"
+    acceptance_criteria:
+      - "Summary cards: total tokens, cost, budget progress"
+      - "Agent ranking bar chart"
+      - "Model consumption pie chart"
+      - "Daily trend line chart"
+      - "Period selector (week/month/quarter)"
+
+  - id: FE-W4-002
+    title: "Bill records page"
+    description: |
+      Billing records table: time, instance name, model, input_tokens,
+      output_tokens, cost. Filters: date range picker, instance selector,
+      model selector. Export CSV button.
+      API: GET /api/v1/billing/records, GET /api/v1/billing/export.
+    wave: 4
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W4-001
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/billing/BillRecords.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Bill records spec (section 4.6.2)"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 180
+    focus_area: "Billing records"
+    tech_stack:
+      - "Ant Design 5.x Table, DatePicker, Select, Button"
+    verification:
+      - "Table renders with pagination"
+      - "Filters work: date range, instance, model"
+      - "CSV export downloads file"
+    acceptance_criteria:
+      - "Records table with all specified columns"
+      - "Date range + instance + model filters"
+      - "CSV export button"
+      - "Pagination"
+
+  - id: FE-W4-003
+    title: "403 Forbidden page"
+    description: |
+      Simple forbidden access page. Shows lock icon, "no permission" message,
+      and "back to dashboard" button. Clean, centered layout matching theme.
+    wave: 4
+    agent: gem-implementer
+    priority: low
+    status: pending
+    dependencies:
+      - FE-W1-002
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/pages/error/Forbidden.tsx"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "403 page requirement"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 60
+    focus_area: "Error pages"
+    tech_stack:
+      - "Ant Design 5.x Result, Button"
+    verification:
+      - "Page renders with lock icon and message"
+      - "Back button navigates to /dashboard"
+    acceptance_criteria:
+      - "Lock icon + permission denied message"
+      - "Back to dashboard button"
+      - "Theme-aware styling"
+
+  - id: FE-W4-004
+    title: "Shared utilities and Polish (loading, empty, error states)"
+    description: |
+      Create reusable components: PageLoading (full-page Spin with skeleton),
+      EmptyState (illustration + message + action button), ErrorResult
+      (error message + retry button).
+      Apply to all pages: add loading states on data fetch, empty states
+      when no data, error states on fetch failure.
+      Add request ID status bar in dev mode (bottom of page).
+      Add global loading indicator for route transitions.
+    wave: 4
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W2-001
+      - FE-W2-002
+      - FE-W2-003
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/components/PageLoading.tsx"
+      - "agent-platform/frontend/src/components/EmptyState.tsx"
+      - "agent-platform/frontend/src/components/ErrorResult.tsx"
+      - "agent-platform/frontend/src/components/RequestIdBar.tsx"
+      - "agent-platform/frontend/src/utils/index.ts"
+    context_files:
+      - path: "agent-platform/docs/frontend-require.md"
+        description: "Global interaction spec (section 5)"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 200
+    focus_area: "Polish"
+    tech_stack:
+      - "Ant Design 5.x Spin, Skeleton, Empty, Result"
+    verification:
+      - "All pages show loading on data fetch"
+      - "Empty state shown for empty lists"
+      - "Error state with retry on fetch failure"
+    acceptance_criteria:
+      - "PageLoading, EmptyState, ErrorResult components"
+      - "All pages have loading/empty/error states"
+      - "Request ID bar visible in dev mode"
+      - "Smooth route transition loading"
+
+  - id: FE-W4-005
+    title: "Utility hooks (usePolling, usePagination, useConfirm)"
+    description: |
+      Shared hooks used across pages:
+      - usePolling(fn, interval): auto-poll with cleanup, used by monitor, task status
+      - usePagination(defaultPageSize): manage page/pageSize state for tables
+      - useConfirm(): programmatic confirm dialog wrapper
+      - useWebSocket(url, onMessage): WebSocket connection hook for agent stream
+    wave: 4
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W1-001
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/hooks/usePolling.ts"
+      - "agent-platform/frontend/src/hooks/usePagination.ts"
+      - "agent-platform/frontend/src/hooks/useConfirm.ts"
+      - "agent-platform/frontend/src/hooks/useWebSocket.ts"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 120
+    focus_area: "Shared hooks"
+    tech_stack:
+      - "React hooks"
+      - "TypeScript"
+    verification:
+      - "usePolling cleans up on unmount"
+      - "useWebSocket reconnects on token refresh"
+    acceptance_criteria:
+      - "usePolling with auto-cleanup"
+      - "usePagination with page/pageSize state"
+      - "useConfirm returns promise-based confirm"
+      - "useWebSocket with reconnection logic"
+
+  # ─── Shared Components (spanning waves) ────────────────────────────────
+
+  - id: FE-W1-009
+    title: "Shared components library (StatusBadge, PageHeader, ConfirmButton)"
+    description: |
+      Reusable UI components shared across pages:
+      - StatusBadge: colored badge for agent status (ready/running/creating/etc.)
+      - PageHeader: page title + breadcrumb + optional action buttons
+      - ConfirmButton: button with built-in Popconfirm
+      - CopyButton: copy text to clipboard with feedback
+      - LoadingCard: card with skeleton loading state
+    wave: 1
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - FE-W1-001
+      - FE-W1-002
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/components/StatusBadge.tsx"
+      - "agent-platform/frontend/src/components/PageHeader.tsx"
+      - "agent-platform/frontend/src/components/ConfirmButton.tsx"
+      - "agent-platform/frontend/src/components/CopyButton.tsx"
+      - "agent-platform/frontend/src/components/LoadingCard.tsx"
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 150
+    focus_area: "Shared components"
+    tech_stack:
+      - "Ant Design 5.x Badge, Typography, Button, Popconfirm, Card"
+    verification:
+      - "StatusBadge renders correct colors for all statuses"
+      - "CopyButton shows success feedback"
+    acceptance_criteria:
+      - "StatusBadge with color mapping for 7 agent states"
+      - "PageHeader with title + breadcrumb"
+      - "ConfirmButton with Popconfirm"
+      - "CopyButton with clipboard + feedback"
+      - "LoadingCard with skeleton"
+
+  # ─── Wave 2 additional ─────────────────────────────────────────────────
+
+  - id: FE-W2-006
+    title: "App entry point + provider composition"
+    description: |
+      Wire up App.tsx with provider hierarchy:
+      ThemeProvider -> ConfigProvider (Ant Design) -> BrowserRouter ->
+      AuthInit (check token on mount) -> Routes.
+      Main entry main.tsx renders App.
+      Handle root redirect (/ -> /dashboard).
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - FE-W1-002
+      - FE-W1-005
+      - FE-W1-007
+    conflicts_with: []
+    files:
+      - "agent-platform/frontend/src/App.tsx"
+      - "agent-platform/frontend/src/main.tsx"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 80
+    focus_area: "App bootstrap"
+    tech_stack:
+      - "React 18"
+      - "React Router v6"
+      - "Ant Design 5.x ConfigProvider"
+    verification:
+      - "App renders with correct provider chain"
+      - "Root / redirects to /dashboard"
+      - "Theme applied on first render"
+    acceptance_criteria:
+      - "Provider chain: Theme -> Config -> Router -> Auth"
+      - "/ redirects to /dashboard"
+      - "Token checked on app init"
+
+# ============================================================================
+# POST-MVP ROADMAP (phases only, no task details)
+# ============================================================================
+
+post_mvp_roadmap:
+  phase_5_builder_editor:
+    title: "Phase 5: Builder Editor (Core Complex Page)"
+    description: |
+      The 8-section split editor for Agent configuration. This is the most
+      complex page in the application, requiring:
+      - Left panel: 8 collapsible sections (basic info, personality, model config,
+        tools, skills, MCP, workspace, permissions)
+      - Right panel: real-time preview
+      - Auto-save + manual save dual mode
+      - Markdown editor for system prompt with preview
+      - Dynamic MCP config form based on transport type
+      - Workspace preload with drag-and-drop reordering
+      - Validation + publish flow
+    estimated_tasks: 8
+    estimated_effort: large
+    pages:
+      - "/builder - Agent config list page"
+      - "/builder/new - Create new agent config"
+      - "/builder/:id - 8-section editor"
+
+  phase_6_approvals_memory:
+    title: "Phase 6: Approvals + Memory Browser"
+    description: |
+      Approval management and memory asset browsing.
+      - Pending approval list with approve/reject actions
+      - Approval history with filters
+      - Memory asset file tree browser
+      - Asset search with keyword
+      - Text file preview (.md, .json, .yaml, .txt)
+    estimated_tasks: 4
+    estimated_effort: medium
+    pages:
+      - "/approvals - Pending list"
+      - "/approvals/history - History"
+      - "/memory - Asset browser"
+      - "/memory/search - Asset search"
+
+  phase_7_budget_permissions:
+    title: "Phase 7: Budget Management + Permission Config"
+    description: |
+      Admin-only pages for budget and permission management.
+      - Budget threshold setting with alert rules
+      - Permission definition CRUD
+      - Role management with permission binding
+    estimated_tasks: 2
+    estimated_effort: medium
+    pages:
+      - "/billing/budget - Budget management (admin)"
+      - "/permissions - Permission config (super admin)"
+
+  phase_8_builder_advanced:
+    title: "Phase 8: Preview, Version History, Import/Export"
+    description: |
+      Advanced builder features.
+      - Preview dialog: sandbox conversation with agent config
+      - Version history: list, view, rollback
+      - Import/export: YAML/JSON formats
+    estimated_tasks: 3
+    estimated_effort: medium
+    pages:
+      - "/builder/:id/preview - Preview dialog"
+      - "/builder/:id/versions - Version history"
+      - "/builder/import - Import agent config"
+
+  phase_9_polish_i18n:
+    title: "Phase 9: i18n, Responsive Tweaks, PWA"
+    description: |
+      Internationalization and final polish.
+      - Extract all Chinese strings to i18n keys
+      - Add English translations (react-i18next)
+      - Language switcher in header
+      - Responsive layout adjustments for tablets
+      - PWA manifest + service worker (optional)
+      - Performance optimization (bundle analysis, lazy loading audit)
+      - Accessibility audit (ARIA labels, keyboard navigation)
+    estimated_tasks: 4
+    estimated_effort: medium
+
+# ============================================================================
+# DEPENDENCY GRAPH SUMMARY
+# ============================================================================
+
+dependency_summary:
+  wave_1_tasks:
+    - FE-W1-001  # scaffolding (no deps)
+    - FE-W1-002  # theme (depends on W1-001)
+    - FE-W1-003  # axios client (depends on W1-001)
+    - FE-W1-004  # API modules (depends on W1-003, W1-008)
+    - FE-W1-005  # auth store (depends on W1-001)
+    - FE-W1-006  # main layout (depends on W1-002, W1-005)
+    - FE-W1-007  # routes (depends on W1-002, W1-005)
+    - FE-W1-008  # types (depends on W1-001)
+    - FE-W1-009  # shared components (depends on W1-001, W1-002)
+
+  wave_2_tasks:
+    - FE-W2-001  # login (depends on W1-005, W1-006, W1-007)
+    - FE-W2-002  # dashboard (depends on W1-004, W1-006, W1-007)
+    - FE-W2-003  # agent list (depends on W1-004, W1-007, W1-008)
+    - FE-W2-004  # agent detail (depends on W2-003)
+    - FE-W2-005  # new agent (depends on W2-003)
+    - FE-W2-006  # app entry (depends on W1-002, W1-005, W1-007)
+
+  wave_3_tasks:
+    - FE-W3-001  # market home (depends on W1-004, W1-006, W1-007)
+    - FE-W3-002  # template detail (depends on W3-001)
+    - FE-W3-003  # skill + MCP stores (depends on W3-001)
+    - FE-W3-004  # org tree (depends on W1-004, W1-006, W1-007)
+    - FE-W3-005  # member management (depends on W3-004)
+    - FE-W3-006  # API key management (depends on W3-004)
+
+  wave_4_tasks:
+    - FE-W4-001  # billing overview (depends on W1-002, W1-004, W1-006, W1-007)
+    - FE-W4-002  # bill records (depends on W4-001)
+    - FE-W4-003  # 403 page (depends on W1-002)
+    - FE-W4-004  # polish components (depends on W2-001, W2-002, W2-003)
+    - FE-W4-005  # utility hooks (depends on W1-001)
+
+  # Critical path: W1-001 -> W1-008 -> W1-004 -> W2-003 -> W2-004
+  # Parallel paths: W1-001 -> W1-005 -> W1-006 -> W2-001
+  #                 W1-001 -> W1-002 -> W1-006 -> W2-001
+  #                 W1-001 -> W1-002 -> W1-007 -> W3-001
+  #                 W1-001 -> W1-002 -> W4-001 -> W4-002
